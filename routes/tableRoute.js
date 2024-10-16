@@ -29,6 +29,42 @@ router.post('/create-table', async (req, res) => {
     }
 });
 
+router.delete('/delete-table/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const table = await tableModel.findByIdAndDelete(id);
+        if (!table) {
+            return res.status(404).json({ success: false, message: 'Table not found' });
+        }
+        res.status(200).json({
+            success: true,
+            message: 'Table deleted successfully',
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: 'An error occurred while deleting the table' });
+    }
+});
+
+router.put('/update-table/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { tableName } = req.body;
+        const updatedTable = await tableModel.findByIdAndUpdate(id, { tableName: tableName }, { new: true });
+        if (!updatedTable) {
+            return res.status(404).json({ success: false, message: 'Table not found' });
+        }
+        res.status(200).json({
+            success: true,
+            message: 'Table updated successfully',
+            updatedTable,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: 'An error occurred while updating the table' });
+    }
+});
+
 router.get('/get-tables', async (req, res) => {
     try {
         const tables = await tableModel.find({});

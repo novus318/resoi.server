@@ -28,27 +28,54 @@ const upload = multer({ storage });
 
 router.post('/create-item', upload.single('image'), async (req, res) => {
     try {
-        const { name, price, description, ingredients, category, subcategory } = req.body;
+        const { 
+            name, 
+            price, 
+            offer,
+            description, 
+            ingredients, 
+            category, 
+            subcategory, 
+            variants, 
+            isVeg 
+        } = req.body;
+
         // Check if required fields are provided
-        if (!req.file) {
-            return res.status(400).json({success:false,
-                message: 'No image provided'
+        if (!req.file && !price) {
+            return res.status(400).json({
+                success: false,
+                message: 'No image provided and no price specified for single-price item'
             });
         }
 
         // Create a new item
         const newItem = new itemModel({
             name,
-            price,
+            price: price ? Number(price) : undefined,
+            offer: Number(offer), // Use price if provided
             description,
-            ingredients:JSON.parse(ingredients),
-            status:'available',
+            ingredients: ingredients ? JSON.parse(ingredients) : [], // Parse ingredients array if provided
             category,
+            status: 'available',
+            isVeg: isVeg === 'true', // Convert to Boolean from string
+            isAvailable: true, // Default availability
+            rating: 0, // Default rating
+            ratingCount: 0 // Default rating count
         });
 
-        if(subcategory){
+        if (subcategory) {
             newItem.subcategory = subcategory;
         }
+
+        // Handle variants if provided
+        if (variants) {
+            newItem.variants = JSON.parse(variants).map(variant => ({
+                name: variant.name,
+                price: Number(variant.price),
+                isAvailable: variant.isAvailable !== undefined ? variant.isAvailable : true
+            }));
+        }
+
         // Save the item to the database
         const savedItem = await newItem.save();
 
@@ -79,10 +106,22 @@ router.post('/create-item', upload.single('image'), async (req, res) => {
 });
 
 
+
 router.put('/edit-item/:id', upload.single('image'), async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, price, description, ingredients, category, subcategory, status } = req.body;
+        const {
+            name,
+            offer,
+            price,
+            description,
+            ingredients,
+            category,
+            subcategory,
+            status,
+            variants,
+            isVeg,
+        } = req.body;
 
         // Find the item by ID
         const item = await itemModel.findById(id);
@@ -92,12 +131,23 @@ router.put('/edit-item/:id', upload.single('image'), async (req, res) => {
 
         // Update the item's properties
         if (name) item.name = name;
-        if (price) item.price = price;
+        if (price) item.price = Number(price);
+        if (offer) item.offer = Number(offer) // Ensure price is a number
         if (description) item.description = description;
         if (ingredients) item.ingredients = JSON.parse(ingredients);
         if (category) item.category = category;
         if (subcategory) item.subcategory = subcategory;
         if (status) item.status = status;
+        if (isVeg !== undefined) item.isVeg = isVeg === 'true'; // Convert string to Boolean
+
+        // Handle variants if provided
+        if (variants) {
+            item.variants = JSON.parse(variants).map(variant => ({
+                name: variant.name,
+                price: Number(variant.price),
+                isAvailable: variant.isAvailable !== undefined ? variant.isAvailable : true
+            }));
+        }
 
         // Handle image if a new one is provided
         if (req.file) {
@@ -119,7 +169,7 @@ router.put('/edit-item/:id', upload.single('image'), async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Item updated successfully',
-            data: updatedItem
+            data: updatedItem,
         });
 
     } catch (error) {
@@ -127,6 +177,7 @@ router.put('/edit-item/:id', upload.single('image'), async (req, res) => {
         res.status(500).json({ success: false, error: 'An error occurred while updating the item' });
     }
 });
+
 
 
 router.put('/change-status/:id', async (req, res) => {
@@ -159,7 +210,7 @@ router.put('/change-status/:id', async (req, res) => {
 
 router.get('/get-items', async (req, res) => {
     try {
-        const items = await itemModel.find({});
+        const items = await itemModel.find({}).populate('category subcategory');
         res.status(200).json({
             success: true,
             items,
