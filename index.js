@@ -12,7 +12,7 @@ import tableRoutes from './routes/tableRoute.js'
 
 const app = express();
 const PORT = 8000;
-const allowedOrigins = [ 'http://localhost:3001', 'http://localhost:3000'];
+const allowedOrigins = [ 'http://localhost:3001', 'http://localhost:3000','https://resoi.vercel.app'];
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
