@@ -5,6 +5,9 @@ import fs from 'fs';
 import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import NodeCache from 'node-cache';
+
+const cache = new NodeCache({ stdTTL: 180, checkperiod: 300 }); 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
@@ -210,7 +213,24 @@ router.put('/change-status/:id', async (req, res) => {
 
 router.get('/get-items', async (req, res) => {
     try {
-        const items = await itemModel.find({}).populate('category subcategory');
+        const cachedItems = cache.get('items');
+        
+        if (cachedItems) {
+            // Return cached data if available
+            return res.status(200).json({
+                success: true,
+                items: cachedItems,
+            });
+        }
+
+        // Fetch from database if not cached
+        const items = await itemModel.find({}) .populate('category')
+        .populate('subcategory')
+        .lean();;
+
+        // Store result in cache
+        cache.set('items', items);
+
         res.status(200).json({
             success: true,
             items,

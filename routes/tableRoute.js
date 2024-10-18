@@ -50,10 +50,24 @@ router.put('/update-table/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { tableName } = req.body;
-        const updatedTable = await tableModel.findByIdAndUpdate(id, { tableName: tableName }, { new: true });
+
+        // Check if the new table name already exists (excluding the current table ID)
+        const existingTable = await tableModel.findOne({ tableName, _id: { $ne: id } });
+
+        if (existingTable) {
+            return res.status(400).json({
+                success: false,
+                message: 'Table name already exists.',
+            });
+        }
+
+        // Proceed with the update if no conflicts
+        const updatedTable = await tableModel.findByIdAndUpdate(id, { tableName }, { new: true });
+
         if (!updatedTable) {
             return res.status(404).json({ success: false, message: 'Table not found' });
         }
+
         res.status(200).json({
             success: true,
             message: 'Table updated successfully',
@@ -64,6 +78,7 @@ router.put('/update-table/:id', async (req, res) => {
         res.status(500).json({ success: false, error: 'An error occurred while updating the table' });
     }
 });
+
 
 router.get('/get-tables', async (req, res) => {
     try {
