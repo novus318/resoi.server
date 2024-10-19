@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import NodeCache from 'node-cache';
 
-const cache = new NodeCache({ stdTTL: 180, checkperiod: 300 }); 
+const cache = new NodeCache({ stdTTL: 1450, checkperiod: 1440 }); 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
@@ -82,6 +82,7 @@ router.post('/create-item', upload.single('image'), async (req, res) => {
         // Save the item to the database
         const savedItem = await newItem.save();
 
+        cache.del("items");
         // Handle image if it exists
         if (req.file) {
             const oldPath = req.file.path;
@@ -168,6 +169,7 @@ router.put('/edit-item/:id', upload.single('image'), async (req, res) => {
         // Save the updated item to the database
         const updatedItem = await item.save();
 
+        cache.del("items");
         // Send the response
         res.status(200).json({
             success: true,
@@ -198,7 +200,7 @@ router.put('/change-status/:id', async (req, res) => {
         if (!updatedItem) {
             return res.status(404).json({ message: 'Item not found' });
         }
-
+        cache.del("items");
         res.status(200).json({
             success:true,
             message: 'Item status updated successfully',
@@ -224,7 +226,7 @@ router.get('/get-items', async (req, res) => {
         }
 
         // Fetch from database if not cached
-        const items = await itemModel.find({}) .populate('category')
+        const items = await itemModel.find({}).populate('category')
         .populate('subcategory')
         .lean();;
 
