@@ -9,16 +9,16 @@ import itemRoutes from './routes/itemRoutes.js'
 import categoryRoutes from './routes/categoryRoutes.js'
 import tableRoutes from './routes/tableRoute.js'
 
-
 const app = express();
 const PORT = 8000;
 const allowedOrigins = [ 'http://localhost:3001', 'http://localhost:3000','https://malabarresoi.in','https://www.malabarresoi.in','https://admin.malabarresoi.in','https://server.malabarresoi.in'];
+
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true); // Allow the request
     } else {
-      callback(new Error('Not allowed by CORS')); // Deny the request
+      callback(new Error('Not allowed by CORS'));
     }
   }
 }));
