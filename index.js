@@ -12,7 +12,7 @@ import tableRoutes from './routes/tableRoute.js'
 
 const app = express();
 const PORT = 8000;
-const allowedOrigins = [ 'http://localhost:3001', 'http://localhost:3000','https://malabarresoi.in','https://www.malabarresoi.in','https://admin.malabarresoi.in'];
+const allowedOrigins = [ 'http://localhost:3001', 'http://localhost:3000','https://malabarresoi.in','https://www.malabarresoi.in','https://admin.malabarresoi.in','https://server.malabarresoi.in'];
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
