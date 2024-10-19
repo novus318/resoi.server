@@ -24,7 +24,6 @@ app.use(cors({
 }));
 dotenv.config({ path: './.env' })
 
-// Middleware to parse JSON bodies
 app.use(express.json())
 app.use(morgan('dev'))
 
