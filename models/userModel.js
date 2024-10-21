@@ -14,6 +14,18 @@ const normalUserSchema = new Schema({
     },
     ipAddress: {
         type: String
+    },
+    placeOfOperation:{
+        type: String
+    },
+    isp:{
+        type: String
+    },
+    coordinates:{
+        type: [Number] 
+    },
+    device:{
+        type: String
     }
 }, { timestamps: true });
 

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import NodeCache from 'node-cache';
 
-const cache = new NodeCache({ stdTTL: 1450, checkperiod: 1440 }); 
+const cache = new NodeCache({ stdTTL: 1450, checkperiod: 120 }); 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const router = express.Router();

@@ -8,6 +8,7 @@ import authRoutes from './routes/authRoute.js'
 import itemRoutes from './routes/itemRoutes.js'
 import categoryRoutes from './routes/categoryRoutes.js'
 import tableRoutes from './routes/tableRoute.js'
+import userRoutes from './routes/userRoute.js'
 
 const app = express();
 const PORT = 8000;
@@ -36,6 +37,7 @@ app.get('/', async (req, res) => {
 //routes
 app.use('/itemImages', express.static(path.join(new URL(import.meta.url).pathname, '..', 'itemImages')));
 app.use('/api/auth',authRoutes)
+app.use('/api/user',userRoutes)
 app.use('/api/item',itemRoutes)
 app.use('/api/category',categoryRoutes)
 app.use('/api/table',tableRoutes)
