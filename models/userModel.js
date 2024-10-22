@@ -12,6 +12,12 @@ const normalUserSchema = new Schema({
         required: true,
         unique: true
     },
+    deliveryAdress:{
+        type: String,
+    },
+    deliveryCoordinates:{
+        type: [Number]
+    },
     ipAddress: {
         type: String
     },

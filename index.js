@@ -9,6 +9,7 @@ import itemRoutes from './routes/itemRoutes.js'
 import categoryRoutes from './routes/categoryRoutes.js'
 import tableRoutes from './routes/tableRoute.js'
 import userRoutes from './routes/userRoute.js'
+import onlineRoutes from './routes/onlineRoutes.js'
 
 const app = express();
 const PORT = 8000;
@@ -41,6 +42,7 @@ app.use('/api/user',userRoutes)
 app.use('/api/item',itemRoutes)
 app.use('/api/category',categoryRoutes)
 app.use('/api/table',tableRoutes)
+app.use('/api/online',onlineRoutes)
 
 
 app.listen(PORT, () => {
