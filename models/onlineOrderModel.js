@@ -3,6 +3,11 @@ import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
 const onlineOrderSchema = new Schema({
+  orderId: {
+    type: String,
+    required: true,
+    unique: true
+  },
     user: {
         type: Schema.Types.ObjectId,
         ref: 'User',
