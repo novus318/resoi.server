@@ -90,6 +90,9 @@ router.post('/create/order', async (req, res) => {
 
             await newOrder.save();
 
+            user.deliveryAdress = address
+            user.deliveryCoordinates = coordinates
+              await user.save()
             if (paymentMethod === 'cod') {
                 return res.status(201).json({
                     success: true,

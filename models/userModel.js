@@ -16,7 +16,8 @@ const normalUserSchema = new Schema({
         type: String,
     },
     deliveryCoordinates:{
-        type: [Number]
+        lat: { type: Number, required: true },
+        lng: { type: Number, required: true }
     },
     ipAddress: {
         type: String

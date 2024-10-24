@@ -10,6 +10,7 @@ import categoryRoutes from './routes/categoryRoutes.js'
 import tableRoutes from './routes/tableRoute.js'
 import userRoutes from './routes/userRoute.js'
 import onlineRoutes from './routes/onlineRoutes.js'
+import tableOrderRoutes from './routes/tableOrderRoutes.js'
 
 const app = express();
 const PORT = 8000;
@@ -43,7 +44,7 @@ app.use('/api/item',itemRoutes)
 app.use('/api/category',categoryRoutes)
 app.use('/api/table',tableRoutes)
 app.use('/api/online',onlineRoutes)
-
+app.use('/api/tableOrder',tableOrderRoutes)
 
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);

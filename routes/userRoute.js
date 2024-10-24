@@ -64,6 +64,39 @@ console.log(ipResponse.data)
     }
 });
 
+router.get('/address', async (req, res) => {
+    try {
+        const { authorization } = req.headers;
+
+        // Verify the token
+        jwt.verify(authorization, JWT_SECRET, async (err, decoded) => {
+            if (err) {
+                // Token is invalid or expired
+                return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+            }
+
+                 // Token is valid, retrieve the user info using the userId from the token
+                 const user = await userModel.findById(decoded.userId).select('-password'); // Exclude password
+
+                 if (!user) {
+                     return res.status(404).json({ success: false, message: 'User not found' });
+                 }
+     
+                 res.status(200).json({
+                     success: true,
+                     message: 'User address retrieved successfully',
+                     address: user?.deliveryAdress|| null,
+                     name:user?.name,
+                     number:user?.mobileNumber,
+                     coordinates:user?.deliveryCoordinates||null
+                 });
+        });
+ } catch (error) {
+        console.log(error)
+        res.status(500).json({ success: false, message: 'Error retrieving user address', error: error.message });
+    }
+});
+
 
 router.post('/verify', async (req, res) => {
     try {

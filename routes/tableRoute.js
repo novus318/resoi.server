@@ -1,5 +1,6 @@
 import express from 'express'
 import tableModel from '../models/tableModel.js';
+import mongoose from 'mongoose';
 
 
 
@@ -90,6 +91,25 @@ router.get('/get-tables', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, error: 'An error occurred while fetching tables' });
+    }
+});
+router.get('/get-table/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(200).json({ success: false, message: 'Invalid table ID' });
+        }
+        const table = await tableModel.findById(id);
+        if (!table) {
+            return res.status(200).json({ success: false, message: 'Table not found' });
+        }
+            res.status(200).json({
+            success: true,
+            table,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(200).json({ success: false, error: 'An error occurred while fetching table' });
     }
 });
 
