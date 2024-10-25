@@ -29,7 +29,8 @@ const normalUserSchema = new Schema({
         type: String
     },
     coordinates:{
-        type: [Number] 
+        lat: { type: Number, required: true },
+        lng: { type: Number, required: true }
     },
     device:{
         type: String

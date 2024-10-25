@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import userModel from '../models/userModel.js';
 import axios from 'axios';
 import useragent from 'useragent';
+import onlineOrderModel from '../models/onlineOrderModel.js';
+import tableOrderModel from '../models/tableOrderModel.js';
 const router=express.Router()
 dotenv.config({ path: './.env' })
 
@@ -17,11 +19,12 @@ router.post('/create/user', async (req, res) => {
         const ipResponse = await axios.get(`http://ip-api.com/json/${ipAddress}`);
         const { city, regionName, country, isp, lat, lon } = ipResponse.data;
 
-console.log(ipResponse.data)
-
         // Construct placeOfOperation and coordinates
         const placeOfOperation = `${city}, ${regionName}, ${country}`;
-        const coordinates = [lat, lon];
+        const coordinates = {
+            lat:lat,
+            lng:lon
+        };
 
         const agent = useragent.parse(req.headers['user-agent']);
         const device = agent.device.toString(); 
@@ -61,6 +64,62 @@ console.log(ipResponse.data)
     } catch (error) {
         console.log(error)
         res.status(500).json({ success:false,message: 'Error creating or updating user', error: error.message });
+    }
+});
+
+
+router.get('/get-users', async (req, res) => {
+    try {
+        const users = await userModel.find({});
+        res.status(200).json({ success: true, users });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error', error });
+    }
+});
+router.get('/get-user/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const user = await userModel.findById(id);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        const onlineOrders = await onlineOrderModel.find({ user: id });
+        const storeOrders = await tableOrderModel.find({ user: id });
+        res.status(200).json({ success: true, user,onlineOrders,storeOrders });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error', error });
+    }
+});
+
+
+router.put('/update-user/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, mobileNumber, placeOfOperation, isp } = req.body;
+    try {
+        const user = await userModel.findByIdAndUpdate(id, { name, mobileNumber, placeOfOperation, isp }, { new: true });
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        res.status(200).json({ success: true, user });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Error updating user', error: error.message });
+        }
+        });
+
+router.delete('/delete-user/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const user = await userModel.findByIdAndDelete(id);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        res.status(200).json({ success: true, message: 'User deleted successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Error deleting user', error: error.message });
     }
 });
 
