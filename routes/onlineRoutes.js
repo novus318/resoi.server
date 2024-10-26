@@ -7,7 +7,7 @@ import onlineOrderModel from '../models/onlineOrderModel.js';
 import axios from 'axios';
 import uniqid from 'uniqid'
 import sha256 from 'sha256'
-import { broadcastUpdate } from '../index.js';
+import { broadcastUpdate } from '../utils/webSocketUtils.js';
 const router=express.Router()
 dotenv.config({ path: './.env' })
 
