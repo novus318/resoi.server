@@ -7,7 +7,7 @@ import onlineOrderModel from '../models/onlineOrderModel.js';
 import axios from 'axios';
 import uniqid from 'uniqid'
 import sha256 from 'sha256'
-import { broadcastUpdate } from '../utils/webSocketUtils.js';
+import { broadcastOrderUpdate } from '../utils/webSocket.js';
 const router=express.Router()
 dotenv.config({ path: './.env' })
 
@@ -94,8 +94,9 @@ router.post('/create/order', async (req, res) => {
             user.deliveryAdress = address
             user.deliveryCoordinates = coordinates
               await user.save()
+
+              broadcastOrderUpdate(newOrder);
             if (paymentMethod === 'cod') {
-                broadcastUpdate({ message: 'Order updated', order: newOrder });
                 return res.status(201).json({
                     success: true,
                     message: 'Order created successfully',
@@ -230,21 +231,32 @@ router.get('/order-status/:id',async(req,res)=>{
     }
 })
 
-router.get('/get-online/orders', async (req, res) => {
+router.get('/get-online/ordersToday', async (req, res) => {
     try {
-        const orders = await onlineOrderModel.find({});
+        // Get the start and end of the current day
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0); // Set to 12:00 AM
+
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999); // Set to 11:59 PM
+
+        // Query to get orders from today
+        const orders = await onlineOrderModel.find({
+            createdAt: {
+                $gte: startOfToday,
+                $lt: endOfToday
+            }
+        }).populate('user');
+
         res.status(200).json({
             success: true,
-            message: 'Online orders fetched successfully',
+            message: 'Today\'s online orders fetched successfully',
             orders
         });
-
-        // Send real-time updates using WebSocket
-        broadcastUpdate({ message: 'Online orders fetched', orders });
-
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Server Error', error });
     }
 });
+
 export default router
