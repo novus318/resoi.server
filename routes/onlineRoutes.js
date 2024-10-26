@@ -8,7 +8,7 @@ import axios from 'axios';
 import uniqid from 'uniqid'
 import sha256 from 'sha256'
 import { broadcastOrderUpdate } from '../utils/webSocket.js';
-const router=express.Router()
+const router = express.Router()
 dotenv.config({ path: './.env' })
 
 const { JWT_SECRET } = process.env;
@@ -51,13 +51,13 @@ router.post('/create/order', async (req, res) => {
     try {
         const calculateTotal = () => {
             return cartItems.reduce((total, item) => {
-              const priceAfterDiscount = item.offer
-                ? item.price - item.price * (item.offer / 100)
-                : item.price;
-              return total + priceAfterDiscount * item.quantity;
+                const priceAfterDiscount = item.offer
+                    ? item.price - item.price * (item.offer / 100)
+                    : item.price;
+                return total + priceAfterDiscount * item.quantity;
             }, 0);
-          };
-        const totalAmount =calculateTotal()
+        };
+        const totalAmount = calculateTotal()
 
         // Verify the token and retrieve the user
         let user;
@@ -87,15 +87,25 @@ router.post('/create/order', async (req, res) => {
                 totalAmount,
                 status: paymentMethod === 'cod' ? 'confirmed' : 'pending',
                 paymentStatus: 'pending'
-            }).populate('user');
+            });
 
             await newOrder.save();
 
             user.deliveryAdress = address
             user.deliveryCoordinates = coordinates
-              await user.save()
-
-              broadcastOrderUpdate(newOrder);
+            await user.save()
+            const pushOrder = {
+                orderId: orderId,
+                user: user,
+                address,
+                coordinates,
+                paymentMethod,
+                cartItems,
+                totalAmount,
+                status: paymentMethod === 'cod' ? 'confirmed' : 'pending',
+                paymentStatus: 'pending'
+            }
+            broadcastOrderUpdate(pushOrder);
             if (paymentMethod === 'cod') {
                 return res.status(201).json({
                     success: true,
@@ -105,7 +115,7 @@ router.post('/create/order', async (req, res) => {
             } else {
                 // Integrate PhonePe payment
                 try {
-                    const phonePeResponse = await initiatePhonePePayment(orderId, totalAmount,user);
+                    const phonePeResponse = await initiatePhonePePayment(orderId, totalAmount, user);
                     if (phonePeResponse.success) {
                         return res.status(201).json({
                             success: true,
@@ -139,7 +149,7 @@ router.post('/create/order', async (req, res) => {
 });
 
 // Function to initiate PhonePe payment
-async function initiatePhonePePayment(orderId, amount,user) {
+async function initiatePhonePePayment(orderId, amount, user) {
     let merchantTransactionId = uniqid();
     const paymentURL = 'https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay'; // Example PhonePe endpoint
     const payload = {
@@ -152,22 +162,22 @@ async function initiatePhonePePayment(orderId, amount,user) {
         redirectMode: "REDIRECT",
         mobileNumber: `91${user.mobileNumber}`,
         paymentInstrument: {
-          type: "PAY_PAGE",
+            type: "PAY_PAGE",
         },
     };
- // Make a base64-encoded payload
- let bufferObj = Buffer.from(JSON.stringify(payload), "utf8");
- let base64EncodedPayload = bufferObj.toString("base64");
+    // Make a base64-encoded payload
+    let bufferObj = Buffer.from(JSON.stringify(payload), "utf8");
+    let base64EncodedPayload = bufferObj.toString("base64");
 
- // X-VERIFY => SHA256(base64EncodedPayload + "/pg/v1/pay" + SALT_KEY) + ### + SALT_INDEX
- let string = base64EncodedPayload + "/pg/v1/pay" + SALT_KEY;
- let sha256_val = sha256(string);
- let xVerifyChecksum = sha256_val + "###" + SALT_INDEX;
+    // X-VERIFY => SHA256(base64EncodedPayload + "/pg/v1/pay" + SALT_KEY) + ### + SALT_INDEX
+    let string = base64EncodedPayload + "/pg/v1/pay" + SALT_KEY;
+    let sha256_val = sha256(string);
+    let xVerifyChecksum = sha256_val + "###" + SALT_INDEX;
 
     const headers = {
         "Content-Type": "application/json",
-       "X-VERIFY": xVerifyChecksum,
-       accept: "application/json",
+        "X-VERIFY": xVerifyChecksum,
+        accept: "application/json",
     };
 
     try {
@@ -193,30 +203,30 @@ router.post('/verify', async (req, res) => {
                 return res.status(401).json({ success: false, message: 'Invalid or expired token' });
             }
 
-                 // Token is valid, retrieve the user info using the userId from the token
-                 const user = await userModel.findById(decoded.userId).select('-password'); // Exclude password
+            // Token is valid, retrieve the user info using the userId from the token
+            const user = await userModel.findById(decoded.userId).select('-password'); // Exclude password
 
-                 if (!user) {
-                     return res.status(404).json({ success: false, message: 'User not found' });
-                 }
-     
-                 res.status(200).json({
-                     success: true,
-                     message: 'Token is valid',
-                     user,
-                     decoded
-                 });
+            if (!user) {
+                return res.status(404).json({ success: false, message: 'User not found' });
+            }
+
+            res.status(200).json({
+                success: true,
+                message: 'Token is valid',
+                user,
+                decoded
+            });
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error verifying token', error: error.message });
     }
 });
 
-router.get('/order-status/:id',async(req,res)=>{
+router.get('/order-status/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const order = await onlineOrderModel.findOne({orderId:id})
-        if(!order){
+        const order = await onlineOrderModel.findOne({ orderId: id })
+        if (!order) {
             return res.status(404).json({ success: false, message: 'Order not found' });
         }
 
