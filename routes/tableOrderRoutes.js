@@ -8,6 +8,7 @@ import uniqid from 'uniqid'
 import sha256 from 'sha256'
 import tableOrderModel from '../models/tableOrderModel.js';
 import tableModel from '../models/tableModel.js';
+import { broadcastTableOrderUpdate } from '../utils/webSocket.js';
 const router=express.Router()
 dotenv.config({ path: './.env' })
 
@@ -100,7 +101,9 @@ router.post('/create/table-order', async (req, res) => {
         // Save the order and update the table status
         await newOrder.save();
         await tableModel.findByIdAndUpdate(tableId, { status: 'occupied' });
+        await newOrder.populate('user table');
 
+        broadcastTableOrderUpdate(newOrder)
         return res.status(201).json({
             success: true,
             message: 'Order confirmed successfully',
@@ -245,4 +248,34 @@ console.log(id,order)
         res.status(500).json({ success: false, message: 'Server Error', error });
     }
 })
+
+router.get('/get-store/ordersToday', async (req, res) => {
+    try {
+        // Get the start and end of the current day
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0); // Set to 12:00 AM
+
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999); // Set to 11:59 PM
+
+        // Query to get orders from today
+        const orders = await tableOrderModel.find({
+            createdAt: {
+                $gte: startOfToday,
+                $lt: endOfToday
+            }
+        }).populate('user table');
+
+        res.status(200).json({
+            success: true,
+            message: 'Today\'s store orders fetched successfully',
+            orders
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error', error });
+    }
+});
+
+
 export default router

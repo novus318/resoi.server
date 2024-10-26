@@ -19,11 +19,20 @@ export const initWebSocket = (server) => {
   });
 };
 
-export const broadcastOrderUpdate = (order) => {
+export const broadcastOnlineOrderUpdate = (order) => {
+  broadcastUpdate('onlineOrder', order);
+};
+
+export const broadcastTableOrderUpdate = (order) => {
+  broadcastUpdate('tableOrder', order);
+};
+
+const broadcastUpdate = (type, order) => {
   if (wss && wss.clients) {
     wss.clients.forEach((client) => {
       if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify(order));
+        const message = JSON.stringify({ type, order });
+        client.send(message);
       }
     });
   }

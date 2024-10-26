@@ -7,7 +7,7 @@ import onlineOrderModel from '../models/onlineOrderModel.js';
 import axios from 'axios';
 import uniqid from 'uniqid'
 import sha256 from 'sha256'
-import { broadcastOrderUpdate } from '../utils/webSocket.js';
+import { broadcastOnlineOrderUpdate } from '../utils/webSocket.js';
 const router = express.Router()
 dotenv.config({ path: './.env' })
 
@@ -96,7 +96,7 @@ router.post('/create/order', async (req, res) => {
             await user.save()
             await newOrder.populate('user');
 
-            broadcastOrderUpdate(newOrder)
+            broadcastOnlineOrderUpdate(newOrder)
             if (paymentMethod === 'cod') {
                 return res.status(201).json({
                     success: true,
