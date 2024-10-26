@@ -8,10 +8,11 @@ const router = express.Router();
 
 router.post('/create-table', async (req, res) => {
     try {
-        const { name } = req.body;
+        const { name,categories } = req.body;
         // save table to database
         const table = await tableModel.findOne({
             tableName: name,
+            categories:categories
         });
         if (table) {
             return res.status(400).json({success:false, message: 'Table name already exists' });
@@ -50,8 +51,8 @@ router.delete('/delete-table/:id', async (req, res) => {
 router.put('/update-table/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { tableName } = req.body;
-
+        const { tableName,categories } = req.body;
+console.log(categories)
         // Check if the new table name already exists (excluding the current table ID)
         const existingTable = await tableModel.findOne({ tableName, _id: { $ne: id } });
 
@@ -63,7 +64,7 @@ router.put('/update-table/:id', async (req, res) => {
         }
 
         // Proceed with the update if no conflicts
-        const updatedTable = await tableModel.findByIdAndUpdate(id, { tableName }, { new: true });
+        const updatedTable = await tableModel.findByIdAndUpdate(id, { tableName,categories }, { new: true });
 
         if (!updatedTable) {
             return res.status(404).json({ success: false, message: 'Table not found' });

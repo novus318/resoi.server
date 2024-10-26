@@ -6,6 +6,7 @@ import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import NodeCache from 'node-cache';
+import tableModel from '../models/tableModel.js';
 
 const cache = new NodeCache({ stdTTL: 1450, checkperiod: 120 }); 
 
@@ -242,6 +243,36 @@ router.get('/get-items', async (req, res) => {
         res.status(500).json({ success: false, error: 'An error occurred while fetching items' });
     }
 });
+router.get('/get-table-items/:tableId', async (req, res) => {
+    const { tableId } = req.params;
+
+    try {
+        // Find the table by ID and populate the categories
+        const table = await tableModel.findById(tableId).populate('categories.value').lean();
+        
+        if (!table) {
+            return res.status(404).json({ success: false, error: 'Table not found' });
+        }
+
+        // Extract category IDs from the table's categories
+        const categoryIds = table.categories.map(category => category.value._id);
+
+        // Fetch items that match the categories assigned to the table
+        const items = await itemModel.find({ category: { $in: categoryIds } })
+            .populate('category')
+            .populate('subcategory')
+            .lean();
+
+        res.status(200).json({
+            success: true,
+            items,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: 'An error occurred while fetching table items' });
+    }
+});
+
 
 router.get('/get-item/:id', async (req, res) => {
     try {
