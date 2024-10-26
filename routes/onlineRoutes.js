@@ -7,6 +7,7 @@ import onlineOrderModel from '../models/onlineOrderModel.js';
 import axios from 'axios';
 import uniqid from 'uniqid'
 import sha256 from 'sha256'
+import { broadcastUpdate } from '../index.js';
 const router=express.Router()
 dotenv.config({ path: './.env' })
 
@@ -94,6 +95,7 @@ router.post('/create/order', async (req, res) => {
             user.deliveryCoordinates = coordinates
               await user.save()
             if (paymentMethod === 'cod') {
+                broadcastUpdate({ message: 'Order updated', order: newOrder });
                 return res.status(201).json({
                     success: true,
                     message: 'Order created successfully',
@@ -212,9 +214,7 @@ router.post('/verify', async (req, res) => {
 router.get('/order-status/:id',async(req,res)=>{
     try {
         const { id } = req.params;
-        console.log(id)
         const order = await onlineOrderModel.findOne({orderId:id})
-console.log(id,order)
         if(!order){
             return res.status(404).json({ success: false, message: 'Order not found' });
         }
@@ -229,4 +229,22 @@ console.log(id,order)
         res.status(500).json({ success: false, message: 'Server Error', error });
     }
 })
+
+router.get('/get-online/orders', async (req, res) => {
+    try {
+        const orders = await onlineOrderModel.find({});
+        res.status(200).json({
+            success: true,
+            message: 'Online orders fetched successfully',
+            orders
+        });
+
+        // Send real-time updates using WebSocket
+        broadcastUpdate({ message: 'Online orders fetched', orders });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error', error });
+    }
+});
 export default router

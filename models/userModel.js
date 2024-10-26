@@ -16,8 +16,8 @@ const normalUserSchema = new Schema({
         type: String,
     },
     deliveryCoordinates:{
-        lat: { type: Number, required: true },
-        lng: { type: Number, required: true }
+        lat: { type: Number },
+        lng: { type: Number }
     },
     ipAddress: {
         type: String
@@ -29,8 +29,8 @@ const normalUserSchema = new Schema({
         type: String
     },
     coordinates:{
-        lat: { type: Number, required: true },
-        lng: { type: Number, required: true }
+        lat: { type: Number },
+        lng: { type: Number }
     },
     device:{
         type: String
