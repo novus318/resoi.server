@@ -95,6 +95,7 @@ router.post('/create/order', async (req, res) => {
             user.deliveryCoordinates = coordinates
             await user.save()
             const pushOrder = {
+                _id:newOrder._id,
                 orderId: orderId,
                 user: user,
                 address,
