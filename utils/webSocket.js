@@ -1,5 +1,5 @@
 // utils/webSocket.js
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 
 let wss;
 
