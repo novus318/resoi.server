@@ -94,19 +94,9 @@ router.post('/create/order', async (req, res) => {
             user.deliveryAdress = address
             user.deliveryCoordinates = coordinates
             await user.save()
-            const pushOrder = {
-                _id:newOrder._id,
-                orderId: orderId,
-                user: user,
-                address,
-                coordinates,
-                paymentMethod,
-                cartItems,
-                totalAmount,
-                status: paymentMethod === 'cod' ? 'confirmed' : 'pending',
-                paymentStatus: 'pending'
-            }
-            broadcastOrderUpdate(pushOrder);
+            await newOrder.populate('user');
+
+            broadcastOrderUpdate(newOrder)
             if (paymentMethod === 'cod') {
                 return res.status(201).json({
                     success: true,
