@@ -87,7 +87,7 @@ router.post('/create/order', async (req, res) => {
                 totalAmount,
                 status: paymentMethod === 'cod' ? 'confirmed' : 'pending',
                 paymentStatus: 'pending'
-            });
+            }).populate('user');
 
             await newOrder.save();
 
