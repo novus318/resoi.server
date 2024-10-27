@@ -260,4 +260,44 @@ router.get('/get-online/ordersToday', async (req, res) => {
     }
 });
 
+router.get('/get-online/orders/byId', async (req, res) => {
+    try {
+        const { authorization } = req.headers;
+        jwt.verify(authorization, JWT_SECRET, async (err, decoded) => {
+            if (err) {
+                // Token is invalid or expired
+                return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+            }
+
+                 // Token is valid, retrieve the user info using the userId from the token
+                 const user = await userModel.findById(decoded.userId).select('-password'); // Exclude password
+
+                 if (!user) {
+                     return res.status(404).json({ success: false, message: 'User not found' });
+                 }
+                 const sixMonthsAgo = new Date();
+                 sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+     
+                 // Find orders made in the last six months
+                 const orders = await onlineOrderModel.find({ user: user._id, createdAt: { $gte: sixMonthsAgo } })
+                     .populate('user').sort({
+                         createdAt: -1
+                     });
+     
+                 if (!orders.length) { // Check if there are no orders
+                     return res.status(404).json({ success: false, message: 'No orders found in the last 6 months' });
+                 }
+
+              res.status(200).json({
+                  success: true,
+                  message: 'Online order fetched successfully',
+                  orders
+              });
+        });
+    } catch (error) {
+        console.error(error)
+        res.status(500).json({ success: false, message: 'Server Error', error });
+    }
+});
+
 export default router
