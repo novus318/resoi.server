@@ -247,6 +247,15 @@ router.get('/get-table-items/:tableId', async (req, res) => {
     const { tableId } = req.params;
 
     try {
+        const cachedItems = cache.get('table-items');
+        
+        if (cachedItems) {
+            // Return cached data if available
+            return res.status(200).json({
+                success: true,
+                items: cachedItems,
+            });
+        }
         // Find the table by ID and populate the categories
         const table = await tableModel.findById(tableId).populate('categories.value').lean();
         
@@ -262,7 +271,8 @@ router.get('/get-table-items/:tableId', async (req, res) => {
             .populate('category')
             .populate('subcategory')
             .lean();
-
+            
+            cache.set('table-items', items);
         res.status(200).json({
             success: true,
             items,

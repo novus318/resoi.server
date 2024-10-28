@@ -4,8 +4,7 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import userModel from '../models/userModel.js';
 import axios from 'axios';
-import uniqid from 'uniqid'
-import sha256 from 'sha256'
+import crypto from 'crypto';
 import tableOrderModel from '../models/tableOrderModel.js';
 import tableModel from '../models/tableModel.js';
 import { broadcastTableOrderUpdate } from '../utils/webSocket.js';
@@ -14,10 +13,9 @@ dotenv.config({ path: './.env' })
 
 const { JWT_SECRET } = process.env;
 
-const MERCHANT_ID = "PGTESTPAYUAT";
-const PHONE_PE_HOST_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox";
+const MERCHANT_ID = "PGTESTPAYUAT86";
 const SALT_INDEX = 1;
-const SALT_KEY = "099eb0cd-02cf-4e2a-8aca-3e6c6aff0399";
+const SALT_KEY = "96434309-7796-489d-8924-ab56988a6076";
 const APP_BE_URL = "http://localhost:3000";
 
 // Helper function to generate unique order ID
@@ -196,58 +194,215 @@ router.get('/get-order/:id', async (req, res) => {
     }
     });
 
-
-
-router.post('/verify', async (req, res) => {
+router.post('/order-paymentMethod',async (req,res)=>{
+    const {  paymentMethod, orderId } = req.body;
     try {
-        const { token } = req.body;
-
-        // Verify the token
-        jwt.verify(token, JWT_SECRET, async (err, decoded) => {
-            if (err) {
-                // Token is invalid or expired
-                return res.status(401).json({ success: false, message: 'Invalid or expired token' });
-            }
-
-                 // Token is valid, retrieve the user info using the userId from the token
-                 const user = await userModel.findById(decoded.userId).select('-password'); // Exclude password
-
-                 if (!user) {
-                     return res.status(404).json({ success: false, message: 'User not found' });
-                 }
-     
-                 res.status(200).json({
-                     success: true,
-                     message: 'Token is valid',
-                     user,
-                     decoded
-                 });
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error verifying token', error: error.message });
-    }
-});
-
-router.get('/order-status/:id',async(req,res)=>{
-    try {
-        const { id } = req.params;
-        console.log(id)
-        const order = await onlineOrderModel.findOne({orderId:id})
-console.log(id,order)
-        if(!order){
+        // Find the existing order
+        const existingOrder = await tableOrderModel.findOne({ orderId });
+        if (!existingOrder) {
             return res.status(404).json({ success: false, message: 'Order not found' });
         }
 
-        res.status(200).json({
+        existingOrder.paymentMethod = paymentMethod;
+
+        // Save the updated order
+        await existingOrder.save();
+
+        return res.status(200).json({
             success: true,
-            message: 'Order status fetched successfully',
-            order
-        })
+            message: 'Payment method updated successfully',
+            order: existingOrder
+        });
+
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: 'Server Error', error });
+        console.log(error);
+        res.status(500).json({ success: false, message: 'Error updating payment method', error: error.message });
     }
 })
+
+router.post('/table-order/online-pay', async (req, res) => {
+    const { orderId } = req.body;
+    try {
+        // Find the existing order
+        const existingOrder = await tableOrderModel.findOne({ orderId }).populate('user');
+        if (!existingOrder) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+
+        existingOrder.paymentStatus = 'pending';
+        existingOrder.paymentMethod = 'online';
+
+        // Save the updated order
+        await existingOrder.save();
+
+        try {
+            const phonePeResponse = await initiatePhonePePayment(existingOrder,existingOrder.totalAmount, existingOrder.user);
+            if (phonePeResponse.success) {
+                return res.status(201).json({
+                    success: true,
+                    message: 'Order created and payment initiated successfully',
+                    order: existingOrder,
+                    payment: phonePeResponse.data
+                });
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Order created but failed to initiate payment',
+                    order: existingOrder
+                });
+            }
+        } catch (paymentError) {
+            console.log('PhonePe Payment Error:', paymentError);
+            return res.status(500).json({
+                success: false,
+                message: 'Error creating order and initiating payment',
+                order: existingOrder,
+                error: paymentError.message
+            });
+        }
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ success: false, message: 'Error updating payment status', error: error.message });
+    }
+    })
+
+    async function initiatePhonePePayment(order,amount, user) {
+    
+        if (!user.mobileNumber || user.mobileNumber.length !== 10) {
+            throw new Error("Invalid mobile number provided.");
+        }
+        
+        const data = {
+            merchantId: MERCHANT_ID,
+            merchantUserId: 'MUID' + user._id,
+            name: user.name,
+            mobileNumber: `+91${user.mobileNumber}`,
+            amount: parseInt(amount * 100), // Amount in paise, ensure integer
+            merchantTransactionId: order.orderId,
+            redirectUrl: `${APP_BE_URL}/table/paymentConfirm//${order.orderId}`,
+            redirectMode: "REDIRECT",
+            paymentInstrument: {
+                type: "PAY_PAGE",
+            },
+        };
+    
+        try {
+            const payload = JSON.stringify(data);
+            const payloadBase64 = Buffer.from(payload).toString('base64');
+    
+            const stringToSign = payloadBase64 + '/pg/v1/pay' + SALT_KEY;
+            const sha256 = crypto.createHash('sha256').update(stringToSign).digest('hex');
+            const checksum = sha256 + '###' + SALT_INDEX;
+    
+            const prod_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay";
+            const options = {
+                method: 'POST',
+                url: prod_URL,
+                headers: {
+                    accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-VERIFY': checksum,
+                },
+                data: {
+                    request: payloadBase64
+                },
+            };
+    
+            const response = await axios.request(options);
+            return response.data;
+    
+        } catch (error) {
+            console.error('PhonePe Payment Error:', error.message);
+            if (error.response) {
+                console.error('Response Status:', error.response.status);
+                console.error('Response Data:', JSON.stringify(error.response.data, null, 2));
+            }
+            throw new Error('Failed to initiate PhonePe payment');
+        }
+    }
+    
+
+    router.get('/order-status/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+    
+            // Validate input
+            if (!id) {
+                return res.status(400).json({ success: false, message: 'Order ID is required' });
+            }
+    
+            // Find the existing order
+            const order = await tableOrderModel.findOne({ orderId: id }).populate('user');
+            if (!order) {
+                return res.status(404).json({ success: false, message: 'Order not found' });
+            }
+    
+            // If payment method is cash, return status immediately
+            if (order.paymentMethod === 'cash') {
+                return res.status(200).json({
+                    success: true,
+                    message: 'payment status fetched successfully',
+                    order
+                });
+            }
+    
+            // Prepare data for PhonePe payment status check
+            const stringToSign = `/pg/v1/status/${MERCHANT_ID}/${id}${SALT_KEY}`;
+            const sha256 = crypto.createHash('sha256').update(stringToSign).digest('hex');
+            const checksum = `${sha256}###${SALT_INDEX}`;
+    
+            const URL = `https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/status/${MERCHANT_ID}/${id}`;
+            const options = {
+                method: 'GET',
+                url: URL,
+                headers: {
+                    accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-VERIFY': checksum,
+                    'X-MERCHANT-ID': MERCHANT_ID,
+                },
+           };
+    
+            // Call the PhonePe API to fetch payment status
+            const response = await axios.request(options);
+    
+            // Update the order status based on the API response
+            if (response.data.success === true && order.paymentStatus !== 'completed') {
+                order.status = 'completed';
+                order.paymentStatus = 'completed';
+                await order.save();
+    
+                return res.status(200).json({
+                    success: true,
+                    message: 'payment confirmed successfully',
+                    order
+                });
+            } else if (response.data.success === false && order.paymentStatus !== 'failed') {
+                order.status = 'in-progress';
+                order.paymentStatus = 'failed';
+                await order.save();
+    
+                return res.status(400).json({
+                    success: false,
+                    message: 'payment confirmation failed',
+                    order
+                });
+            } else {
+                // If status hasn't changed, simply return the current order
+                return res.status(200).json({
+                    success: true,
+                    message: 'payment status fetched successfully',
+                    order
+                });
+            }
+        } catch (error) {
+            console.error("Error fetching payment status:", error.response.data);
+            return res.status(500).json({ success: false, message: 'Server Error', error: error.message });
+        }
+    });
+
+
 
 router.get('/get-store/ordersToday', async (req, res) => {
     try {
