@@ -1,23 +1,21 @@
 
 import express from 'express'
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
+import dotenv, { populate } from 'dotenv';
 import userModel from '../models/userModel.js';
 import onlineOrderModel from '../models/onlineOrderModel.js';
 import axios from 'axios';
-import uniqid from 'uniqid'
-import sha256 from 'sha256'
+import crypto from 'crypto';
 import { broadcastOnlineOrderUpdate } from '../utils/webSocket.js';
 const router = express.Router()
 dotenv.config({ path: './.env' })
 
 const { JWT_SECRET } = process.env;
 
-const MERCHANT_ID = "PGTESTPAYUAT";
-const PHONE_PE_HOST_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox";
+const MERCHANT_ID = "PGTESTPAYUAT86";
 const SALT_INDEX = 1;
-const SALT_KEY = "099eb0cd-02cf-4e2a-8aca-3e6c6aff0399";
-const APP_BE_URL = "http://localhost:3000";
+const SALT_KEY = "96434309-7796-489d-8924-ab56988a6076";
+const APP_BE_URL = "https://www.malabarresoi.in";
 
 // Helper function to generate unique order ID
 async function generateUniqueOrderId() {
@@ -95,9 +93,8 @@ router.post('/create/order', async (req, res) => {
             user.deliveryCoordinates = coordinates
             await user.save()
             await newOrder.populate('user');
-
-            broadcastOnlineOrderUpdate(newOrder)
             if (paymentMethod === 'cod') {
+                broadcastOnlineOrderUpdate(newOrder)
                 return res.status(201).json({
                     success: true,
                     message: 'Order created successfully',
@@ -106,7 +103,7 @@ router.post('/create/order', async (req, res) => {
             } else {
                 // Integrate PhonePe payment
                 try {
-                    const phonePeResponse = await initiatePhonePePayment(orderId, totalAmount, user);
+                    const phonePeResponse = await initiatePhonePePayment(newOrder,totalAmount, user);
                     if (phonePeResponse.success) {
                         return res.status(201).json({
                             success: true,
@@ -139,46 +136,62 @@ router.post('/create/order', async (req, res) => {
     }
 });
 
-// Function to initiate PhonePe payment
-async function initiatePhonePePayment(orderId, amount, user) {
-    let merchantTransactionId = uniqid();
-    const paymentURL = 'https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay'; // Example PhonePe endpoint
-    const payload = {
-        orderId: orderId,
-        amount: amount * 100, // Converting to paise
-        merchantId: merchantTransactionId,
-        merchantTransactionId: orderId,
-        merchantUserId: user._id,
-        redirectUrl: `${APP_BE_URL}/payment/validate/${merchantTransactionId}`,
+
+async function initiatePhonePePayment(order,amount, user) {
+    
+    if (!user.mobileNumber || user.mobileNumber.length !== 10) {
+        throw new Error("Invalid mobile number provided.");
+    }
+    
+    const data = {
+        merchantId: MERCHANT_ID,
+        merchantUserId: 'MUID' + user._id,
+        name: user.name,
+        mobileNumber: `+91${user.mobileNumber}`,
+        amount: parseInt(amount * 100), // Amount in paise, ensure integer
+        merchantTransactionId: order.orderId,
+        redirectUrl: `${APP_BE_URL}/order-validate/${order.orderId}`,
         redirectMode: "REDIRECT",
-        mobileNumber: `91${user.mobileNumber}`,
         paymentInstrument: {
             type: "PAY_PAGE",
         },
     };
-    // Make a base64-encoded payload
-    let bufferObj = Buffer.from(JSON.stringify(payload), "utf8");
-    let base64EncodedPayload = bufferObj.toString("base64");
-
-    // X-VERIFY => SHA256(base64EncodedPayload + "/pg/v1/pay" + SALT_KEY) + ### + SALT_INDEX
-    let string = base64EncodedPayload + "/pg/v1/pay" + SALT_KEY;
-    let sha256_val = sha256(string);
-    let xVerifyChecksum = sha256_val + "###" + SALT_INDEX;
-
-    const headers = {
-        "Content-Type": "application/json",
-        "X-VERIFY": xVerifyChecksum,
-        accept: "application/json",
-    };
 
     try {
-        const response = await axios.post(paymentURL, payload, { headers });
+        const payload = JSON.stringify(data);
+        const payloadBase64 = Buffer.from(payload).toString('base64');
+
+        const stringToSign = payloadBase64 + '/pg/v1/pay' + SALT_KEY;
+        const sha256 = crypto.createHash('sha256').update(stringToSign).digest('hex');
+        const checksum = sha256 + '###' + SALT_INDEX;
+
+        const prod_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay";
+        const options = {
+            method: 'POST',
+            url: prod_URL,
+            headers: {
+                accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-VERIFY': checksum,
+            },
+            data: {
+                request: payloadBase64
+            },
+        };
+
+        const response = await axios.request(options);
         return response.data;
+
     } catch (error) {
-        console.log('Error in PhonePe API:', error);
+        console.error('PhonePe Payment Error:', error.message);
+        if (error.response) {
+            console.error('Response Status:', error.response.status);
+            console.error('Response Data:', JSON.stringify(error.response.data, null, 2));
+        }
         throw new Error('Failed to initiate PhonePe payment');
     }
 }
+
 
 
 
@@ -216,21 +229,73 @@ router.post('/verify', async (req, res) => {
 router.get('/order-status/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const order = await onlineOrderModel.findOne({ orderId: id })
+        const order = await onlineOrderModel.findOne({ orderId: id }).populate('user')
         if (!order) {
             return res.status(404).json({ success: false, message: 'Order not found' });
         }
+        if (order.paymentMethod === 'cod') {
+            return res.status(200).json({
+                success: true,
+                message: 'Order status fetched successfully',
+                order
+        })
+    }
 
-        res.status(200).json({
+    const stringToSign = `/pg/v1/status/${MERCHANT_ID}/${id}${SALT_KEY}`;
+    const sha256 = crypto.createHash('sha256').update(stringToSign).digest('hex');
+    const checksum = `${sha256}###${SALT_INDEX}`;
+
+    const URL = `https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/status/${MERCHANT_ID}/${id}`;
+    const options = {
+        method: 'GET',
+        url: URL,
+        headers: {
+            accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-VERIFY': checksum,
+            'X-MERCHANT-ID': MERCHANT_ID,
+        },
+    };
+
+    // Call the PhonePe API to fetch payment status
+    const response = await axios.request(options);
+
+    // Update the order status based on the API response
+    if (response.data.success === true && order.status !== 'confirmed') {
+        order.status = 'confirmed';
+        order.paymentStatus = 'completed';
+        await order.save();
+        broadcastOnlineOrderUpdate(order); // Only broadcast if the status changes
+        
+        return res.status(200).json({
+            success: true,
+            message: 'Order confirmed successfully',
+            order
+        });
+    } else if (response.data.success !== true && order.status !== 'failed') {
+        order.status = 'failed';
+        order.paymentStatus = 'failed';
+        await order.save();
+        broadcastOnlineOrderUpdate(order); // Only broadcast if the status changes
+        
+        return res.status(400).json({
+            success: false,
+            message: 'Order confirmation failed',
+            order
+        });
+    } else {
+        // If status hasn't changed, simply return the current order without broadcasting
+        return res.status(200).json({
             success: true,
             message: 'Order status fetched successfully',
             order
-        })
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: 'Server Error', error });
+        });
     }
-})
+} catch (error) {
+    console.error("Error fetching order status:", error);
+    return res.status(500).json({ success: false, message: 'Server Error', error });
+}
+});
 
 router.get('/get-online/ordersToday', async (req, res) => {
     try {

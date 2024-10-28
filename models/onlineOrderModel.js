@@ -33,7 +33,7 @@ const onlineOrderSchema = new Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'in-progress', 'completed', 'cancelled'],
+    enum: ['pending', 'confirmed', 'in-progress', 'completed', 'failed','cancelled'],
     default: 'pending'
   },
   cartItems: [
