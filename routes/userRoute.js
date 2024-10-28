@@ -7,6 +7,9 @@ import axios from 'axios';
 import useragent from 'useragent';
 import onlineOrderModel from '../models/onlineOrderModel.js';
 import tableOrderModel from '../models/tableOrderModel.js';
+import NodeCache from 'node-cache';
+
+const cache = new NodeCache({ stdTTL: 120, checkperiod: 120 }); 
 const router=express.Router()
 dotenv.config({ path: './.env' })
 
@@ -158,32 +161,45 @@ router.get('/address', async (req, res) => {
 
 
 router.post('/verify', async (req, res) => {
+    const { token } = req.body;
+
+    if (!token) {
+        return res.status(400).json({ success: false, message: 'Token is required' });
+    }
+
     try {
-        const { token } = req.body;
+        // Verify the token synchronously for better error control
+        const decoded = jwt.verify(token, JWT_SECRET);
 
-        // Verify the token
-        jwt.verify(token, JWT_SECRET, async (err, decoded) => {
-            if (err) {
-                // Token is invalid or expired
-                return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+        // Check cache for user data
+        let user = cache.get(`user_${decoded.userId}`);
+        if (!user) {
+            // User not found in cache, fetch from DB
+            user = await userModel.findById(decoded.userId).select('-password').lean();
+            if (!user) {
+                return res.status(404).json({ success: false, message: 'User not found' });
             }
+            // Cache plain JavaScript user data object
+            cache.set(`user_${decoded.userId}`, user);
+        }
 
-                 // Token is valid, retrieve the user info using the userId from the token
-                 const user = await userModel.findById(decoded.userId).select('-password'); // Exclude password
-
-                 if (!user) {
-                     return res.status(404).json({ success: false, message: 'User not found' });
-                 }
-     
-                 res.status(200).json({
-                     success: true,
-                     message: 'Token is valid',
-                     user,
-                     decoded
-                 });
+        return res.status(200).json({
+            success: true,
+            message: 'Token is valid',
+            user,
         });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Error verifying token', error: error.message });
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ success: false, message: 'Token expired' });
+        }
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({ success: false, message: 'Invalid token' });
+        }
+        
+        console.error('Error verifying token:', error);
+        res.status(500).json({ success: false, message: 'Server error verifying token' });
     }
 });
+
+
 export default router

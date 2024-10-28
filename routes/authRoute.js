@@ -2,6 +2,9 @@ import express from 'express'
 import adminUserModel from '../models/adminUserModel.js';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import NodeCache from 'node-cache';
+
+const cache = new NodeCache({ stdTTL: 120, checkperiod: 120 }); 
 const router=express.Router()
 dotenv.config({ path: './.env' })
 
@@ -108,32 +111,44 @@ router.post('/admin-user/login', async (req, res) => {
 });
 
 router.post('/verify', async (req, res) => {
-    try {
         const { token } = req.body;
 
-        // Verify the token
-        jwt.verify(token, JWT_SECRET, async (err, decoded) => {
-            if (err) {
-                // Token is invalid or expired
-                return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+        if (!token) {
+            return res.status(400).json({ success: false, message: 'Token is required' });
+        }
+
+        try {
+            // Verify the token synchronously for better error control
+            const decoded = jwt.verify(token, JWT_SECRET);
+    
+            // Check cache for user data
+            let user = cache.get(`admin_${decoded.userId}`);
+            if (!user) {
+                // User not found in cache, fetch from DB
+                user = await adminUserModel.findById(decoded.userId).select('-password').lean();
+                if (!user) {
+                    return res.status(404).json({ success: false, message: 'User not found' });
+                }
+                // Cache plain JavaScript user data object
+                cache.set(`admin_${decoded.userId}`, user);
             }
+   
+            return res.status(200).json({
+                success: true,
+                message: 'Token is valid',
+                user,
+            });
+        } catch (error) {
+            if (error.name === 'TokenExpiredError') {
+                return res.status(401).json({ success: false, message: 'Token expired' });
+            }
+            if (error.name === 'JsonWebTokenError') {
+                return res.status(401).json({ success: false, message: 'Invalid token' });
+            }
+            
+            console.error('Error verifying token:', error);
+            res.status(500).json({ success: false, message: 'Server error verifying token' });
+        }
+    });
 
-                 // Token is valid, retrieve the user info using the userId from the token
-                 const user = await adminUserModel.findById(decoded.userId).select('-password'); // Exclude password
-
-                 if (!user) {
-                     return res.status(404).json({ success: false, message: 'User not found' });
-                 }
-     
-                 res.status(200).json({
-                     success: true,
-                     message: 'Token is valid',
-                     user,
-                     decoded
-                 });
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error verifying token', error: error.message });
-    }
-});
 export default router
