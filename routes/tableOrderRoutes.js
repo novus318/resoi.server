@@ -11,12 +11,8 @@ import { broadcastTableOrderUpdate } from '../utils/webSocket.js';
 const router=express.Router()
 dotenv.config({ path: './.env' })
 
-const { JWT_SECRET } = process.env;
+const { JWT_SECRET,MERCHANT_ID ,SALT_INDEX,SALT_KEY ,APP_BE_URL  } = process.env;
 
-const MERCHANT_ID = "PGTESTPAYUAT86";
-const SALT_INDEX = 1;
-const SALT_KEY = "96434309-7796-489d-8924-ab56988a6076";
-const APP_BE_URL = "http://localhost:3000";
 
 // Helper function to generate unique order ID
 async function generateUniqueOrderId() {
