@@ -7,27 +7,24 @@ import onlineOrderModel from '../models/onlineOrderModel.js';
 import axios from 'axios';
 import crypto from 'crypto';
 import { broadcastOnlineOrderUpdate } from '../utils/webSocket.js';
+import mongoose from 'mongoose';
 const router = express.Router()
 dotenv.config({ path: './.env' })
 
-const { JWT_SECRET } = process.env;
+const { JWT_SECRET,MERCHANT_ID ,SALT_INDEX,SALT_KEY ,APP_BE_URL  } = process.env;
 
-const MERCHANT_ID = "PGTESTPAYUAT86";
-const SALT_INDEX = 1;
-const SALT_KEY = "96434309-7796-489d-8924-ab56988a6076";
-const APP_BE_URL = "https://www.malabarresoi.in";
 
-// Helper function to generate unique order ID
+
+
+// Function to generate a unique Order ID
 async function generateUniqueOrderId() {
     let orderId;
     let isUnique = false;
 
     while (!isUnique) {
-        // Generate a random 7-digit number prefixed with 'RS-'
         const uniqueNumber = Math.floor(1000000 + Math.random() * 9000000);
         orderId = `RS-${uniqueNumber}`;
-
-        // Check if this orderId already exists in the database
+        
         const existingOrder = await onlineOrderModel.findOne({ orderId });
         if (!existingOrder) {
             isUnique = true;
@@ -37,123 +34,44 @@ async function generateUniqueOrderId() {
     return orderId;
 }
 
-router.post('/create/order', async (req, res) => {
-    const {
-        userToken,
-        address,
-        coordinates,
-        paymentMethod,
-        cartItems,
-    } = req.body;
-
+// Function to verify JWT and retrieve user
+async function verifyToken(token) {
     try {
-        const calculateTotal = () => {
-            return cartItems.reduce((total, item) => {
-                const priceAfterDiscount = item.offer
-                    ? item.price - item.price * (item.offer / 100)
-                    : item.price;
-                return total + priceAfterDiscount * item.quantity;
-            }, 0);
-        };
-        const totalAmount = calculateTotal()
-
-        // Verify the token and retrieve the user
-        let user;
-        jwt.verify(userToken, JWT_SECRET, async (err, decoded) => {
-            if (err) {
-                return res.status(401).json({ success: false, message: 'Invalid or expired token' });
-            }
-
-            // Token is valid, retrieve the user info using the userId from the token
-            user = await userModel.findById(decoded.userId).select('-password'); // Exclude password
-
-            if (!user) {
-                return res.status(404).json({ success: false, message: 'User not found' });
-            }
-
-            // Generate a unique orderId
-            const orderId = await generateUniqueOrderId();
-
-            // Create the order
-            const newOrder = new onlineOrderModel({
-                orderId: orderId,
-                user: user._id,
-                address,
-                coordinates,
-                paymentMethod,
-                cartItems,
-                totalAmount,
-                status: paymentMethod === 'cod' ? 'confirmed' : 'pending',
-                paymentStatus: 'pending'
-            });
-
-            await newOrder.save();
-
-            user.deliveryAdress = address
-            user.deliveryCoordinates = coordinates
-            await user.save()
-            await newOrder.populate('user');
-            if (paymentMethod === 'cod') {
-                broadcastOnlineOrderUpdate(newOrder)
-                return res.status(201).json({
-                    success: true,
-                    message: 'Order created successfully',
-                    order: newOrder
-                });
-            } else {
-                // Integrate PhonePe payment
-                try {
-                    const phonePeResponse = await initiatePhonePePayment(newOrder,totalAmount, user);
-                    if (phonePeResponse.success) {
-                        return res.status(201).json({
-                            success: true,
-                            message: 'Order created and payment initiated successfully',
-                            order: newOrder,
-                            payment: phonePeResponse.data
-                        });
-                    } else {
-                        return res.status(400).json({
-                            success: false,
-                            message: 'Order created but failed to initiate payment',
-                            order: newOrder
-                        });
-                    }
-                } catch (paymentError) {
-                    console.log('PhonePe Payment Error:', paymentError);
-                    return res.status(500).json({
-                        success: false,
-                        message: 'Error creating order and initiating payment',
-                        order: newOrder,
-                        error: paymentError.message
-                    });
-                }
-            }
-        });
-
+        const decoded = await jwt.verify(token, JWT_SECRET);
+        const user = await userModel.findById(decoded.userId).select('-password');
+        return user;
     } catch (error) {
-        console.log(error);
-        res.status(500).json({ success: false, message: 'Error creating order', error: error.message });
+        throw new Error('Invalid or expired token');
     }
-});
+}
 
+// Calculate total order amount
+function calculateTotal(cartItems) {
+    return cartItems.reduce((total, item) => {
+        const priceAfterDiscount = item.offer
+            ? item.price - item.price * (item.offer / 100)
+            : item.price;
+        return total + priceAfterDiscount * item.quantity;
+    }, 0);
+}
 
-async function initiatePhonePePayment(order,amount, user) {
-    
+// Payment Integration
+async function initiatePhonePePayment(order, amount, user) {
     if (!user.mobileNumber || user.mobileNumber.length !== 10) {
-        throw new Error("Invalid mobile number provided.");
+        throw new Error('Invalid mobile number provided.');
     }
-    
+
     const data = {
         merchantId: MERCHANT_ID,
         merchantUserId: 'MUID' + user._id,
         name: user.name,
         mobileNumber: `+91${user.mobileNumber}`,
-        amount: parseInt(amount * 100), // Amount in paise, ensure integer
+        amount: parseInt(amount * 100),
         merchantTransactionId: order.orderId,
         redirectUrl: `${APP_BE_URL}/order-validate/${order.orderId}`,
-        redirectMode: "REDIRECT",
+        redirectMode: 'REDIRECT',
         paymentInstrument: {
-            type: "PAY_PAGE",
+            type: 'PAY_PAGE',
         },
     };
 
@@ -165,23 +83,19 @@ async function initiatePhonePePayment(order,amount, user) {
         const sha256 = crypto.createHash('sha256').update(stringToSign).digest('hex');
         const checksum = sha256 + '###' + SALT_INDEX;
 
-        const prod_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay";
-        const options = {
-            method: 'POST',
-            url: prod_URL,
-            headers: {
-                accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-VERIFY': checksum,
-            },
-            data: {
-                request: payloadBase64
-            },
-        };
+        const response = await axios.post(
+            'https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay',
+            { request: payloadBase64 },
+            {
+                headers: {
+                    accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-VERIFY': checksum,
+                },
+            }
+        );
 
-        const response = await axios.request(options);
         return response.data;
-
     } catch (error) {
         console.error('PhonePe Payment Error:', error.message);
         if (error.response) {
@@ -191,6 +105,147 @@ async function initiatePhonePePayment(order,amount, user) {
         throw new Error('Failed to initiate PhonePe payment');
     }
 }
+
+
+router.post('/create/order', async (req, res) => {
+    const { userToken, address, coordinates, paymentMethod, cartItems, existingOrderId } = req.body;
+    console.log(existingOrderId);
+  
+    // Start a session for the transaction
+    const session = await mongoose.startSession();
+    session.startTransaction();
+  
+    try {
+      const user = await verifyToken(userToken);
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+  
+      let newOrder;
+      let totalAmount;
+  
+      if (!existingOrderId) {
+        // Calculate total amount
+        totalAmount = calculateTotal(cartItems);
+  
+        // Generate a unique order ID
+        const uniqueOrderId = await generateUniqueOrderId();
+  
+        // Create a new order in the session
+        newOrder = new onlineOrderModel({
+          orderId: uniqueOrderId,
+          user: user._id,
+          address,
+          coordinates,
+          paymentMethod,
+          cartItems,
+          totalAmount,
+          status: paymentMethod === 'cod' ? 'confirmed' : 'pending',
+          paymentStatus: 'pending',
+        });
+  
+        await newOrder.save({ session });
+  
+        // Update user's delivery address and coordinates within the transaction
+        user.deliveryAddress = address;
+        user.deliveryCoordinates = coordinates;
+        await user.save({ session });
+  
+        if (paymentMethod === 'cod') {
+          await session.commitTransaction();
+          session.endSession();
+  
+          broadcastOnlineOrderUpdate(newOrder);
+          return res.status(201).json({
+            success: true,
+            message: 'Order created successfully',
+            order: newOrder,
+          });
+        }
+      } else {
+        // Retrieve and update the existing order
+        newOrder = await onlineOrderModel.findOne({ orderId: existingOrderId }).session(session);
+        if (!newOrder) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+  
+        // Update the order details
+        newOrder.address = address;
+        newOrder.coordinates = coordinates;
+        newOrder.paymentMethod = paymentMethod;
+        newOrder.cartItems = cartItems;
+        newOrder.totalAmount = calculateTotal(cartItems);
+        await newOrder.save({ session });
+  
+        if (paymentMethod === 'cod') {
+            newOrder.status = 'confirmed';
+            await newOrder.save({ session });
+          await session.commitTransaction();
+          session.endSession();
+  
+          return res.status(200).json({
+            success: true,
+            message: 'Order confirmed successfully',
+            order: newOrder,
+          });
+        }
+  
+        totalAmount = newOrder.totalAmount;
+      }
+  
+      // If payment method is not COD, initiate payment
+      try {
+        const phonePeResponse = await initiatePhonePePayment(newOrder, totalAmount, user);
+  
+        if (phonePeResponse.success) {
+          await session.commitTransaction();
+          session.endSession();
+  
+          return res.status(201).json({
+            success: true,
+            message: 'Order created and payment initiated successfully',
+            order: newOrder,
+            payment: phonePeResponse.data,
+          });
+        } else {
+          await session.abortTransaction();
+          session.endSession();
+  
+          return res.status(400).json({
+            success: false,
+            message: 'Order created but failed to initiate payment',
+          });
+        }
+      } catch (paymentError) {
+        console.error('PhonePe Payment Error:', paymentError);
+  
+        await session.abortTransaction();
+        session.endSession();
+  
+        return res.status(500).json({
+          success: false,
+          message: 'Error creating order and initiating payment',
+          error: paymentError.message,
+        });
+      }
+    } catch (error) {
+      console.error('Order Creation Error:', error);
+  
+      await session.abortTransaction();
+      session.endSession();
+  
+      return res.status(500).json({
+        success: false,
+        message: 'Error creating order',
+        error: error.message,
+      });
+    }
+  });
+  
+
+
 
 
 

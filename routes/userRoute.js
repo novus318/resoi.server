@@ -73,7 +73,9 @@ router.post('/create/user', async (req, res) => {
 
 router.get('/get-users', async (req, res) => {
     try {
-        const users = await userModel.find({});
+        const users = await userModel.find({}).sort({
+            createdAt: -1
+        });
         res.status(200).json({ success: true, users });
     } catch (error) {
         console.error(error);

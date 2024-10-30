@@ -16,7 +16,7 @@ const { JWT_SECRET } = process.env;
 const MERCHANT_ID = "PGTESTPAYUAT86";
 const SALT_INDEX = 1;
 const SALT_KEY = "96434309-7796-489d-8924-ab56988a6076";
-const APP_BE_URL = "https://www.malabarresoi.in";
+const APP_BE_URL = "http://localhost:3000";
 
 // Helper function to generate unique order ID
 async function generateUniqueOrderId() {

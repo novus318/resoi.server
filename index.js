@@ -15,6 +15,7 @@ import { initWebSocket } from "./utils/webSocket.js"
 import storeRoutes from './routes/storeRoute.js'
 import staffRoutes from './routes/staffRoutes.js'
 import expenseRoute from './routes/expenseRoute.js'
+import dashboardRoute from './routes/dashboardRoute.js'
 
 const app = express();
 const PORT = 8000;
@@ -52,3 +53,4 @@ app.use('/api/tableOrder',tableOrderRoutes)
 app.use('/api/store',storeRoutes)
 app.use('/api/staff',staffRoutes)
 app.use('/api/expense',expenseRoute)
+app.use('/api/dashboard',dashboardRoute)
