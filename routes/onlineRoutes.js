@@ -1,7 +1,7 @@
 
 import express from 'express'
 import jwt from 'jsonwebtoken';
-import dotenv, { populate } from 'dotenv';
+import dotenv from 'dotenv';
 import userModel from '../models/userModel.js';
 import onlineOrderModel from '../models/onlineOrderModel.js';
 import axios from 'axios';
@@ -245,7 +245,42 @@ router.post('/create/order', async (req, res) => {
   });
   
 
+  router.put('/update/online-order-status/:orderId', async (req, res) => {
+    const { orderId } = req.params;
+    const { status } = req.body;
 
+    try {
+        // Input validation
+        if (!orderId || !status) {
+            return res.status(400).json({ success: false, message: 'Invalid input data' });
+        }
+
+        // Find the order by ID
+        const order = await onlineOrderModel.findOne({orderId});
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+
+        // Update the status and payment status
+        order.status = status;
+        if (status.toLowerCase() === 'completed') {
+            order.paymentStatus = 'completed';
+        }
+
+        // Save the updated order
+        await order.save();
+
+        return res.status(200).json({
+            success: true,
+            message: 'Order status updated successfully',
+            order
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Error updating order status', error: error.message });
+    }
+});
 
 
 
