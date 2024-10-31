@@ -28,9 +28,9 @@ router.post('/create/admin-user', async (req, res) => {
         });
 
         await newUser.save();
-        res.status(201).json({ message: 'Admin user created successfully', user: newUser });
+        res.status(201).json({ success:true, message: 'Admin user created successfully', user: newUser });
     } catch (error) {
-        res.status(500).json({ message: 'Error creating admin user', error: error.message });
+        res.status(500).json({ success:false ,message: 'Error creating admin user', error: error.message });
     }
 });
 
@@ -54,6 +54,20 @@ router.put('/edit/admin-user/:id', async (req, res) => {
         res.status(500).json({ message: 'Error updating admin user', error: error.message });
     }
 });
+router.put('/update/password/roleAdmin', async (req, res) => {
+    try {
+        const { newPassword } = req.body;
+        const User = await adminUserModel.findOne({role: 'admin'});
+        if (!User) {
+            return res.status(404).json({ message: 'Admin user not found' });
+        }
+        User.password = newPassword;
+        await User.save();
+        res.status(200).json({success:true, message: 'Password updated successfully', user: User });
+    } catch (error) {
+        res.status(500).json({ success:false ,message: 'Error updating admin user', error: error.message });
+    }
+});
 
 // Delete an AdminUser
 router.delete('/delete/admin-user/:id', async (req, res) => {
@@ -66,9 +80,9 @@ router.delete('/delete/admin-user/:id', async (req, res) => {
             return res.status(404).json({ message: 'Admin user not found' });
         }
 
-        res.status(200).json({ message: 'Admin user deleted successfully' });
+        res.status(200).json({ success:true,message: 'Admin user deleted successfully' });
     } catch (error) {
-        res.status(500).json({ message: 'Error deleting admin user', error: error.message });
+        res.status(500).json({success:false, message: 'Error deleting admin user', error: error.message });
     }
 });
 router.post('/admin-user/login', async (req, res) => {
@@ -150,5 +164,21 @@ router.post('/verify', async (req, res) => {
             res.status(500).json({ success: false, message: 'Server error verifying token' });
         }
     });
+
+    router.get('/getUsers/admin',async(req,res) => {
+        try {
+            const users = await adminUserModel.find({ 
+                role: { $ne: 'admin' }
+                }).sort({
+                createdAt: -1
+            })
+            .select('-password')
+            .lean();
+            res.status(200).json({success:true,users});
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ success: false, message: 'Server Error', error });
+        }
+    })
 
 export default router
