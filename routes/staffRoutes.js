@@ -181,77 +181,111 @@ router.get('/pending-salaries', async (req, res) => {
 
 router.put('/update/salary/:id', async (req, res) => {
     const payslipId = req.params.id;
-    const { netPay, status, paymentDate, accountId, leaveDays,leaveDeduction, advanceRepayment, rejectionReason } = req.body;
+    const { netPay, status, paymentDate, leaveDays, leaveDeduction, advanceRepayment, rejectionReason } = req.body;
 
-    if (!payslipId || !status ) {
+    // Basic validation
+    if (!payslipId || !status) {
         return res.status(400).json({
             success: false,
             message: 'Missing required fields',
         });
     }
 
+    // Ensure advanceRepayment and netPay are non-negative
+    if (advanceRepayment < 0 || netPay < 0 || leaveDeduction < 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'Amounts for net pay, advance repayment, and leave deduction must be non-negative',
+        });
+    }
+
+    let session;
+
     try {
-        let session = await mongoose.startSession();
+        session = await mongoose.startSession();
         session.startTransaction();
 
         // Handle rejected payroll
         if (status === 'Rejected') {
-            const updatePayslip = await salaryModel.findByIdAndUpdate(
+            const rejectedPayslip = await salaryModel.findByIdAndUpdate(
                 payslipId,
                 { status: 'Rejected', rejectionReason: rejectionReason || 'No reason provided' },
                 { new: true, session }
             );
 
-            if (!updatePayslip) {
+            if (!rejectedPayslip) {
                 await session.abortTransaction();
                 return res.status(404).json({ success: false, message: 'Payroll not found' });
             }
 
             await session.commitTransaction();
-            session.endSession();
             return res.status(200).json({ success: true, message: 'Payroll rejected successfully' });
         }
 
         // Handle payroll update
-        const updatePayslip = await salaryModel.findByIdAndUpdate(
+        const updatedPayslip = await salaryModel.findByIdAndUpdate(
             payslipId,
             {
                 advanceDeduction: advanceRepayment || 0,
                 netPay,
                 onleave: {
                     days: leaveDays || 0,
-                    deductAmount: Number(leaveDeduction),
+                    deductAmount: Number(leaveDeduction) || 0,
                 },
                 paymentDate,
                 status,
-                accountId,
             },
             { new: true, session }
         ).populate('staffId');
 
-        if (!updatePayslip) {
+        if (!updatedPayslip) {
             await session.abortTransaction();
             return res.status(404).json({ success: false, message: 'Payroll not found' });
         }
 
+        // If advanceRepayment is specified, deduct it from the staff member's advance payment balance
         if (advanceRepayment > 0) {
-                await staffModel.findByIdAndUpdate(updatePayslip.staffId._id, { $inc: { advancePayment: -advanceRepayment } }, { session });
-        }
-        // Send WhatsApp notification and finalize
-        await sendWhatsAppSalary(updatePayslip);
-        await session.commitTransaction();
-        session.endSession();
+            await staffModel.findByIdAndUpdate(
+                updatedPayslip.staffId._id,
+                { $inc: { advancePayment: -advanceRepayment } },
+                { session }
+            );
 
-        res.status(200).json({ success: true, message: 'Payroll updated successfully', updatePayslip });
+            // Add a transaction record for the advance repayment
+            await staffModel.findByIdAndUpdate(
+                updatedPayslip.staffId._id,
+                {
+                    $push: {
+                        transactions: {
+                            type: 'Salary Deduction',
+                            amount: advanceRepayment,
+                            description: 'Advance repayment from salary',
+                        },
+                    },
+                },
+                { session }
+            );
+        }
+
+        await session.commitTransaction();
+        res.status(200).json({
+            success: true,
+            message: 'Payroll updated successfully',
+            updatedPayslip,
+        });
     } catch (error) {
+        if (session) await session.abortTransaction();
         console.error('Error updating payroll:', error);
         res.status(500).json({
             success: false,
             message: 'Error updating payroll',
             error: error.message || 'Internal server error',
         });
+    } finally {
+        if (session) session.endSession();
     }
 });
+
 
 router.post('/repay-advance-pay/:id', async (req, res) => {
     const staffId = req.params.id;
@@ -291,40 +325,51 @@ try {
 });
 router.post('/request-advance-pay/:id', async (req, res) => {
     const staffId = req.params.id;
-    const { amount, targetAccount } = req.body; // Extract the fields from the request body
-try {
-    const updatedStaff = await staffModel.findById(staffId);
-    if (!updatedStaff) {
-        return res.status(404).json({ 
+    const { amount } = req.body;
+
+    // Ensure amount is valid
+    if (!amount || amount <= 0) {
+        return res.status(400).json({
             success: false,
-            message: 'Staff member not found' 
+            message: 'Please provide a valid amount greater than 0',
         });
     }
-    updatedStaff.advancePayment += amount
-    const description = `Advance salary payment for ${updatedStaff.name}`
-    const category = 'Salary'
-    const ref = `/staff/details/${staffId}`
-    const transaction = debitAccount(targetAccount,amount,description,category,ref)
-    if(!transaction){
-        updatedStaff.advancePayment -= amount
-        return res.status(500).json({ success:false,message: 'Error processing transaction please check your account balance' });
-    }else{
-    await updatedStaff.save()
-    res.status(200).json({ 
-        success: true,
-        message: 'Advance payment  successfull', 
-        updatedStaff 
-    });
-}
-} catch (error) {
-    res.status(500).json({ 
-        error,
-        success: false,
-        message: 'Error processing advance payment' 
-    });
-}
- 
+
+    try {
+        // Find the staff member by ID
+        const staff = await staffModel.findById(staffId);
+        if (!staff) {
+            return res.status(404).json({
+                success: false,
+                message: 'Staff member not found',
+            });
+        }
+
+        // Update the advancePayment and add a transaction record
+        staff.advancePayment += amount;
+        staff.transactions.push({
+            type: 'Advance Payment',
+            amount,
+            description: 'Advance payment requested',
+        });
+
+        // Save the updated staff document
+        await staff.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Advance payment successful',
+            updatedStaff: staff,
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Error processing advance payment',
+            error: error.message,
+        });
+    }
 });
+
 router.get('/pending-salary/:id', async (req, res) => {
     try {
         const staffId = req.params.id;
