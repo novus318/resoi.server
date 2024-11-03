@@ -386,7 +386,6 @@ router.get('/analytics/items-sold/last-six-months', async (req, res) => {
 });
 
 
-
 router.get('/analytics/average-sale-time/last-three-months', async (req, res) => {
     try {
         // Check for cached data
@@ -418,20 +417,49 @@ router.get('/analytics/average-sale-time/last-three-months', async (req, res) =>
                     $project: {
                         _id: 0,
                         saleTime: {
-                            $divide: [
-                                { $subtract: ['$updatedAt', '$createdAt'] }, // Assuming updatedAt is when the order is completed
-                                1000 * 60 * 60 * 24 // Convert milliseconds to days
+                            $subtract: [
+                                { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] } },
+                                { $dateFromParts: {
+                                    year: { $year: { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] } } },
+                                    month: { $month: { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] } } },
+                                    day: { $dayOfMonth: { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] } } },
+                                    timezone: 'Asia/Kolkata'
+                                }}
                             ]
                         },
-                        totalAmount: '$totalAmount', // Replace with your actual field for total amount
-                        dayOfWeek: { $dayOfWeek: '$createdAt' } // Get the day of the week (1 = Sunday, 7 = Saturday)
+                        saleTimeMinutes: {
+                            $divide: [
+                                { $subtract: [
+                                    { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] } },
+                                    { $dateFromParts: {
+                                        year: { $year: { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] } } },
+                                        month: { $month: { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] } } },
+                                        day: { $dayOfMonth: { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] } } },
+                                        timezone: 'Asia/Kolkata'
+                                    }}
+                                ]},
+                                1000 * 60 // Convert milliseconds to minutes
+                            ]
+                        },
+                        totalAmount: '$totalAmount',
+                        dayOfWeek: { $dayOfWeek: { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] }} }, // Day of week in IST
+                        hourOfDay: { $hour: { $toDate: { $subtract: [{ $toLong: '$createdAt' }, now.utcOffset() * 60 * 1000] } } } // Extract the hour of the sale
                     }
                 },
                 {
                     $group: {
-                        _id: { day: '$dayOfWeek' },
+                        _id: { day: '$dayOfWeek', hour: '$hourOfDay' }, // Group by both day and hour
+                        totalSalesPerHour: { $sum: 1 }, // Count sales per hour
                         averageSaleTime: { $avg: '$saleTime' },
-                        averageAmount: { $avg: '$totalAmount' },
+                        averageAmount: { $avg: '$totalAmount' }
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$_id.day', // Group back by day
+                        peakHour: { $max: { $cond: [ { $gt: ['$totalSalesPerHour', 0] }, '$_id.hour', null ] } }, // Find the hour with the max sales
+                        averageSaleTime: { $avg: '$averageSaleTime' },
+                        averageAmount: { $avg: '$averageAmount' },
                         totalSales: { $sum: 1 } // Count of sales for each day
                     }
                 },
@@ -439,19 +467,20 @@ router.get('/analytics/average-sale-time/last-three-months', async (req, res) =>
                     $project: {
                         day: { $switch: {
                             branches: [
-                                { case: { $eq: ['$_id.day', 1] }, then: 'Sun' },
-                                { case: { $eq: ['$_id.day', 2] }, then: 'Mon' },
-                                { case: { $eq: ['$_id.day', 3] }, then: 'Tue' },
-                                { case: { $eq: ['$_id.day', 4] }, then: 'Wed' },
-                                { case: { $eq: ['$_id.day', 5] }, then: 'Thu' },
-                                { case: { $eq: ['$_id.day', 6] }, then: 'Fri' },
-                                { case: { $eq: ['$_id.day', 7] }, then: 'Sat' },
+                                { case: { $eq: ['$_id', 1] }, then: 'Sun' },
+                                { case: { $eq: ['$_id', 2] }, then: 'Mon' },
+                                { case: { $eq: ['$_id', 3] }, then: 'Tue' },
+                                { case: { $eq: ['$_id', 4] }, then: 'Wed' },
+                                { case: { $eq: ['$_id', 5] }, then: 'Thu' },
+                                { case: { $eq: ['$_id', 6] }, then: 'Fri' },
+                                { case: { $eq: ['$_id', 7] }, then: 'Sat' },
                             ],
                             default: 'Unknown'
                         }},
                         averageSaleTime: { $ifNull: ['$averageSaleTime', 0] }, // Ensure 0 if no sales
                         averageAmount: { $ifNull: ['$averageAmount', 0] }, // Ensure 0 if no sales
-                        totalSales: { $ifNull: ['$totalSales', 0] } // Ensure 0 if no sales
+                        totalSales: { $ifNull: ['$totalSales', 0] }, // Ensure 0 if no sales
+                        peakHour: { $ifNull: ['$peakHour', 0] } // Include peak hour
                     }
                 },
                 { $sort: { 'day': 1 } } // Sort by day
@@ -465,13 +494,13 @@ router.get('/analytics/average-sale-time/last-three-months', async (req, res) =>
 
         // Initialize combined results for each day of the week
         const combinedResults = {
-            'Sun': { time: 0, avrragesale: 0, averageAmount: 0 },
-            'Mon': { time: 0, avrragesale: 0, averageAmount: 0 },
-            'Tue': { time: 0, avrragesale: 0, averageAmount: 0 },
-            'Wed': { time: 0, avrragesale: 0, averageAmount: 0 },
-            'Thu': { time: 0, avrragesale: 0, averageAmount: 0 },
-            'Fri': { time: 0, avrragesale: 0, averageAmount: 0 },
-            'Sat': { time: 0, avrragesale: 0, averageAmount: 0 }
+            'Sun': { time: 0, avrragesale: 0, averageAmount: 0, peakHour: 0 },
+            'Mon': { time: 0, avrragesale: 0, averageAmount: 0, peakHour: 0 },
+            'Tue': { time: 0, avrragesale: 0, averageAmount: 0, peakHour: 0 },
+            'Wed': { time: 0, avrragesale: 0, averageAmount: 0, peakHour: 0 },
+            'Thu': { time: 0, avrragesale: 0, averageAmount: 0, peakHour: 0 },
+            'Fri': { time: 0, avrragesale: 0, averageAmount: 0, peakHour: 0 },
+            'Sat': { time: 0, avrragesale: 0, averageAmount: 0, peakHour: 0 }
         };
 
         // Populate the combined results from table orders
@@ -479,6 +508,7 @@ router.get('/analytics/average-sale-time/last-three-months', async (req, res) =>
             combinedResults[item.day].time += item.averageSaleTime;
             combinedResults[item.day].avrragesale += item.totalSales; // Total number of sales
             combinedResults[item.day].averageAmount += item.averageAmount; // Total amount sold
+            combinedResults[item.day].peakHour = Math.max(combinedResults[item.day].peakHour, item.peakHour); // Track peak hour
         });
 
         // Populate the combined results from online orders
@@ -486,6 +516,7 @@ router.get('/analytics/average-sale-time/last-three-months', async (req, res) =>
             combinedResults[item.day].time += item.averageSaleTime;
             combinedResults[item.day].avrragesale += item.totalSales; // Total number of sales
             combinedResults[item.day].averageAmount += item.averageAmount; // Total amount sold
+            combinedResults[item.day].peakHour = Math.max(combinedResults[item.day].peakHour, item.peakHour); // Track peak hour
         });
 
         // Prepare the final structured response
@@ -493,7 +524,8 @@ router.get('/analytics/average-sale-time/last-three-months', async (req, res) =>
             day: day,
             time: combinedResults[day].time,
             averageSale: combinedResults[day].avrragesale,
-            averageAmount: combinedResults[day].avrragesale > 0 ? combinedResults[day].averageAmount / combinedResults[day].avrragesale : 0 // Calculate average amount per sale
+            averageAmount: combinedResults[day].avrragesale > 0 ? combinedResults[day].averageAmount / combinedResults[day].avrragesale : 0, // Calculate average amount per sale
+            peakHour: combinedResults[day].peakHour // Include peak hour
         }));
 
         // Cache the response data
@@ -511,7 +543,6 @@ router.get('/analytics/average-sale-time/last-three-months', async (req, res) =>
         });
     }
 });
-
 
 
 export default router

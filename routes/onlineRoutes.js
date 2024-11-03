@@ -414,6 +414,36 @@ router.get('/get-online/ordersToday', async (req, res) => {
         res.status(500).json({ success: false, message: 'Server Error', error });
     }
 });
+router.get('/get-online/ordersToday/forDelivery', async (req, res) => {
+    try {
+        // Get the start and end of the current day
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0); // Set to 12:00 AM
+
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999); // Set to 11:59 PM
+
+        // Query to get orders from today
+        const orders = await onlineOrderModel.find({
+            status: {
+                $in: ['confirmed', 'in-progress']
+            },
+            createdAt: {
+                $gte: startOfToday,
+                $lt: endOfToday
+            }
+        }).populate('user');
+
+        res.status(200).json({
+            success: true,
+            message: 'Today\'s online orders fetched successfully',
+            orders
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error', error });
+    }
+});
 
 router.get('/get-online/orders/byId', async (req, res) => {
     try {
