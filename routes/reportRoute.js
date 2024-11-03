@@ -5,6 +5,7 @@ import expenseModel from "../models/expenseModel.js";
 import salaryModel from "../models/salaryModel.js";
 import staffModel from "../models/staffModel.js";
 import NodeCache from "node-cache";
+import moment from "moment-timezone";
 const cache = new NodeCache({ stdTTL: 30, checkperiod: 30 });
 
 const router=express.Router()
@@ -356,12 +357,24 @@ router.get('/analytics/items-sold/last-six-months', async (req, res) => {
             }
         });
 
-        // Format the combined results into an array of objects
-        const analyticsData = Object.values(combinedResults);
+        // Format the combined results into the desired structure
+        const analyticsData = Object.values(combinedResults).map(item => ({
+            item: item.name,
+            totalSold: item.totalSold,
+            month: item.month
+        }));
+
+        // Prepare the months array for the last six months
+        const months = [];
+        for (let i = 5; i >= 0; i--) {
+            const pastMonth = new Date(now.getFullYear(), now.getMonth() - i);
+            months.push(pastMonth.toLocaleString('default', { month: 'long' }));
+        }
 
         res.status(200).json({
             success: true,
-            data: analyticsData
+            data: analyticsData,
+            months: months // Send the array of months along with the data
         });
     } catch (error) {
         res.status(500).json({
@@ -371,5 +384,134 @@ router.get('/analytics/items-sold/last-six-months', async (req, res) => {
         });
     }
 });
+
+
+
+router.get('/analytics/average-sale-time/last-three-months', async (req, res) => {
+    try {
+        // Check for cached data
+        const cachedData = cache.get("saleTime");
+        if (cachedData) {
+            // Return cached data if it exists
+            return res.status(200).json({
+                success: true,
+                data: cachedData
+            });
+        }
+
+        // Get the current date in IST
+        const now = moment.tz('Asia/Kolkata');
+
+        // Define the start of three months ago in IST
+        const startOfThreeMonthsAgo = now.clone().subtract(3, 'months').startOf('month');
+
+        // Function to calculate average sale metrics by day
+        const calculateAverageSaleMetricsByDay = async (model) => {
+            return await model.aggregate([
+                {
+                    $match: {
+                        status: 'completed',
+                        createdAt: { $gte: startOfThreeMonthsAgo.toDate(), $lte: now.toDate() }
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        saleTime: {
+                            $divide: [
+                                { $subtract: ['$updatedAt', '$createdAt'] }, // Assuming updatedAt is when the order is completed
+                                1000 * 60 * 60 * 24 // Convert milliseconds to days
+                            ]
+                        },
+                        totalAmount: '$totalAmount', // Replace with your actual field for total amount
+                        dayOfWeek: { $dayOfWeek: '$createdAt' } // Get the day of the week (1 = Sunday, 7 = Saturday)
+                    }
+                },
+                {
+                    $group: {
+                        _id: { day: '$dayOfWeek' },
+                        averageSaleTime: { $avg: '$saleTime' },
+                        averageAmount: { $avg: '$totalAmount' },
+                        totalSales: { $sum: 1 } // Count of sales for each day
+                    }
+                },
+                {
+                    $project: {
+                        day: { $switch: {
+                            branches: [
+                                { case: { $eq: ['$_id.day', 1] }, then: 'Sun' },
+                                { case: { $eq: ['$_id.day', 2] }, then: 'Mon' },
+                                { case: { $eq: ['$_id.day', 3] }, then: 'Tue' },
+                                { case: { $eq: ['$_id.day', 4] }, then: 'Wed' },
+                                { case: { $eq: ['$_id.day', 5] }, then: 'Thu' },
+                                { case: { $eq: ['$_id.day', 6] }, then: 'Fri' },
+                                { case: { $eq: ['$_id.day', 7] }, then: 'Sat' },
+                            ],
+                            default: 'Unknown'
+                        }},
+                        averageSaleTime: { $ifNull: ['$averageSaleTime', 0] }, // Ensure 0 if no sales
+                        averageAmount: { $ifNull: ['$averageAmount', 0] }, // Ensure 0 if no sales
+                        totalSales: { $ifNull: ['$totalSales', 0] } // Ensure 0 if no sales
+                    }
+                },
+                { $sort: { 'day': 1 } } // Sort by day
+            ]);
+        };
+
+        // Calculate metrics for table orders
+        const tableOrderAvg = await calculateAverageSaleMetricsByDay(tableOrderModel);
+        // Calculate metrics for online orders
+        const onlineOrderAvg = await calculateAverageSaleMetricsByDay(onlineOrderModel);
+
+        // Initialize combined results for each day of the week
+        const combinedResults = {
+            'Sun': { time: 0, avrragesale: 0, averageAmount: 0 },
+            'Mon': { time: 0, avrragesale: 0, averageAmount: 0 },
+            'Tue': { time: 0, avrragesale: 0, averageAmount: 0 },
+            'Wed': { time: 0, avrragesale: 0, averageAmount: 0 },
+            'Thu': { time: 0, avrragesale: 0, averageAmount: 0 },
+            'Fri': { time: 0, avrragesale: 0, averageAmount: 0 },
+            'Sat': { time: 0, avrragesale: 0, averageAmount: 0 }
+        };
+
+        // Populate the combined results from table orders
+        tableOrderAvg.forEach(item => {
+            combinedResults[item.day].time += item.averageSaleTime;
+            combinedResults[item.day].avrragesale += item.totalSales; // Total number of sales
+            combinedResults[item.day].averageAmount += item.averageAmount; // Total amount sold
+        });
+
+        // Populate the combined results from online orders
+        onlineOrderAvg.forEach(item => {
+            combinedResults[item.day].time += item.averageSaleTime;
+            combinedResults[item.day].avrragesale += item.totalSales; // Total number of sales
+            combinedResults[item.day].averageAmount += item.averageAmount; // Total amount sold
+        });
+
+        // Prepare the final structured response
+        const responseData = Object.keys(combinedResults).map(day => ({
+            day: day,
+            time: combinedResults[day].time,
+            averageSale: combinedResults[day].avrragesale,
+            averageAmount: combinedResults[day].avrragesale > 0 ? combinedResults[day].averageAmount / combinedResults[day].avrragesale : 0 // Calculate average amount per sale
+        }));
+
+        // Cache the response data
+        cache.set("saleTime", responseData);
+        res.status(200).json({
+            success: true,
+            data: responseData
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error',
+            error: error.message
+        });
+    }
+});
+
+
 
 export default router
