@@ -3,21 +3,28 @@ import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
 const tableOrderSchema = new Schema({
-  table:{
+  table: {
     type: Schema.Types.ObjectId,
     ref: 'Table',
-    required: true
+    required: function() {
+      return this.orderType === 'dining'; // Table required only for dining orders
+    }
   },
   orderId: {
     type: String,
     required: true,
     unique: true
   },
-    user: {
-        type: Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-      },
+  user: {
+    type: Schema.Types.ObjectId,
+    required: true,
+    refPath: 'userType',
+  },
+  userType: {
+    type: String,
+    required: true,
+    enum: ['User', 'AdminUser'],
+  },  
   paymentMethod: {
     type: String,
     enum: ['cash', 'online'],
@@ -31,6 +38,11 @@ const tableOrderSchema = new Schema({
     type: String,
     enum: ['pending', 'confirmed', 'in-progress', 'completed', 'cancelled'],
     default: 'pending'
+  },
+  orderType: {
+    type: String,
+    enum: ['dining', 'parcel'],
+    required: true
   },
   cartItems: [
     {

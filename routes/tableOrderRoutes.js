@@ -36,17 +36,32 @@ async function generateUniqueOrderId() {
 
 router.post('/create/table-order', async (req, res) => {
     const {
+        orderType,
         tableId,
         userToken,
+        userType,
         cartItems,
     } = req.body;
 
     try {
         // Input Validation
-        if (!tableId || !userToken || !Array.isArray(cartItems) || cartItems.length === 0) {
-            return res.status(400).json({ success: false, message: 'Invalid input data' });
+        if (!orderType || !['dining', 'parcel'].includes(orderType)) {
+            return res.status(400).json({ success: false, message: 'Invalid order type' });
         }
 
+        if (!userToken || !userType || !['User', 'AdminUser'].includes(userType)) {
+            return res.status(400).json({ success: false, message: 'Invalid user details' });
+        }
+
+        if (!Array.isArray(cartItems) || cartItems.length === 0) {
+            return res.status(400).json({ success: false, message: 'Cart items cannot be empty' });
+        }
+
+        if (orderType === 'dining' && !tableId) {
+            return res.status(400).json({ success: false, message: 'Table ID is required for dining orders' });
+        }
+
+        // Calculate Total Amount
         const calculateTotal = () => {
             return cartItems.reduce((total, item) => {
                 const priceAfterDiscount = item.offer
@@ -72,7 +87,7 @@ router.post('/create/table-order', async (req, res) => {
         };
 
         const decoded = await verifyToken();
-        const user = await userModel.findById(decoded.userId).select('-password'); // Exclude password
+        const user = await userModel.findById(decoded.userId).select('-password');
 
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
@@ -83,32 +98,51 @@ router.post('/create/table-order', async (req, res) => {
 
         // Create the order
         const newOrder = new tableOrderModel({
-            table: tableId,
-            orderId: orderId,
+            orderType,
+            table: orderType === 'dining' ? tableId : null,
+            orderId,
             user: user._id,
+            userType,
             cartItems,
             totalAmount,
             status: 'confirmed',
-            paymentStatus: 'pending'
+            paymentStatus: 'pending',
         });
 
-        // Save the order and update the table status
+        // Save the order
         await newOrder.save();
-        await tableModel.findByIdAndUpdate(tableId, { status: 'occupied' });
-        await newOrder.populate('user table');
 
-        broadcastTableOrderUpdate(newOrder)
+        // Update table status for dining orders
+        if (orderType === 'dining') {
+            await tableModel.findByIdAndUpdate(tableId, { status: 'occupied' });
+        }
+
+        await newOrder.populate('user');
+
+        // Conditionally populate 'table' only for dining orders
+        if (newOrder.orderType === 'dining') {
+            await newOrder.populate('table');
+        }
+        
+        // Broadcast the order update (if applicable)
+        broadcastTableOrderUpdate(newOrder);
+
+        // Response
         return res.status(201).json({
             success: true,
             message: 'Order confirmed successfully',
-            order: newOrder
+            order: newOrder,
         });
-
     } catch (error) {
-        console.log(error);
-        res.status(500).json({ success: false, message: 'Error confirming order', error: error.message });
+        console.error(error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error confirming order',
+            error: error.message,
+        });
     }
 });
+
 
 
 router.put('/update/table-order-status/:orderId', async (req, res) => {
