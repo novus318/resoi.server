@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import tableOrderModel from '../models/tableOrderModel.js';
 import tableModel from '../models/tableModel.js';
 import { broadcastTableOrderUpdate } from '../utils/webSocket.js';
+import adminUserModel from '../models/adminUserModel.js';
 const router=express.Router()
 dotenv.config({ path: './.env' })
 
@@ -87,7 +88,12 @@ router.post('/create/table-order', async (req, res) => {
         };
 
         const decoded = await verifyToken();
-        const user = await userModel.findById(decoded.userId).select('-password');
+        let user
+        if (userType === 'AdminUser') {
+            user = await adminUserModel.findById(decoded.userId).select('-password');
+        } else {
+            user = await userModel.findById(decoded.userId).select('-password');
+        }
 
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
@@ -239,6 +245,67 @@ router.put('/update/table-order', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error updating cart', error: error.message });
     }
 });
+
+router.delete('/delete/table-order-item', async (req, res) => {
+    const { orderId, item } = req.body;
+
+    try {
+        // Input validation
+        if (!orderId || !item || !item._id) {
+            return res.status(400).json({ success: false, message: 'Invalid input data. Please provide a valid orderId and item.' });
+        }
+
+        // Find the existing order
+        const existingOrder = await tableOrderModel.findOne({ orderId });
+        if (!existingOrder) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+
+        // Filter out the item to delete
+        const updatedCartItems = existingOrder.cartItems.filter(cartItem => {
+            return !(cartItem._id.toString() === item._id && (!item.variant || cartItem.variant === item.variant));
+        });
+
+        // Check if item was found and removed
+        if (updatedCartItems.length === existingOrder.cartItems.length) {
+            return res.status(404).json({ success: false, message: 'Item not found in the cart' });
+        }
+
+        // Update the cart items
+        existingOrder.cartItems = updatedCartItems;
+
+        // Recalculate total amount
+        const calculateTotal = () => {
+            return existingOrder.cartItems.reduce((total, cartItem) => {
+                const priceAfterDiscount = cartItem.offer
+                    ? cartItem.price - cartItem.price * (cartItem.offer / 100)
+                    : cartItem.price;
+                return total + priceAfterDiscount * cartItem.quantity;
+            }, 0);
+        };
+
+        existingOrder.totalAmount = calculateTotal();
+
+        // Save the updated order
+        await existingOrder.save();
+
+        return res.status(200).json({
+            success: true,
+            message: 'Item deleted successfully',
+            order: existingOrder,
+        });
+
+    } catch (error) {
+        // Log the error
+        console.error('Error deleting item:', error);
+        res.status(500).json({
+            success: false,
+            message: 'An error occurred while deleting the item',
+            error: error.message,
+        });
+    }
+});
+
 
 
 router.get('/get-order/:id', async (req, res) => {
