@@ -17,8 +17,7 @@ import staffRoutes from './routes/staffRoutes.js'
 import expenseRoute from './routes/expenseRoute.js'
 import dashboardRoute from './routes/dashboardRoute.js'
 import reportRoute from './routes/reportRoute.js'
-import cron from 'node-cron';
-import { generateMonthlySalaries } from "./functions/generateSalary.js"
+
 
 const app = express();
 const PORT = 8000;
@@ -32,14 +31,6 @@ app.use(cors({
 dotenv.config({ path: './.env' })
 
 
-cron.schedule('0 10 2 * *', async () => {
-  try {
-    await generateMonthlySalaries();
-    console.log('generateMonthlySalaries executed successfully');
-  } catch (error) {
-    console.error('Error in generateMonthlySalaries:', error);
-  }
-});
 
 app.use(express.json())
 app.use(morgan('dev'))

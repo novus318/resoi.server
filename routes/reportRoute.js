@@ -21,11 +21,12 @@ router.get('/totalof-month', async (req, res) => {
                 data: cachedData
             });
         }
+
         const now = new Date();
         const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59); // Set to 23:59:59
-        
+
         // Current month data
         const currentMonthTableOrders = await tableOrderModel.find({
             status: 'completed',
@@ -50,9 +51,9 @@ router.get('/totalof-month', async (req, res) => {
                 }
             }
         });
-        
+
         const currentMonthSalaryDoc = await salaryModel.find({
-            date: { $gte: startOfCurrentMonth, $lt: now },
+            paymentDate: { $gte: startOfCurrentMonth, $lt: now },
             status: 'Paid'
         });
 
@@ -80,9 +81,9 @@ router.get('/totalof-month', async (req, res) => {
                 }
             }
         });
-        
+
         const lastMonthSalaryDoc = await salaryModel.find({
-            date: { $gte: startOfLastMonth, $lt: endOfLastMonth },
+            paymentDate: { $gte: startOfLastMonth, $lt: endOfLastMonth },
             status: 'Paid'
         });
 
@@ -90,33 +91,35 @@ router.get('/totalof-month', async (req, res) => {
         const currentTableOrderTotal = currentMonthTableOrders.reduce((sum, order) => sum + order.totalAmount, 0);
         const currentOnlineOrderTotal = currentMonthOnlineOrders.reduce((sum, order) => sum + order.totalAmount, 0);
 
-        const currentExpenses = currentMonthExpenseDoc.reduce((sum, doc) => sum + doc.expenses.reduce((subSum, expense) => subSum + expense.amount, 0), 0);
+        const currentExpenses = currentMonthExpenseDoc.reduce((sum, doc) => 
+            sum + doc.expenses.reduce((subSum, expense) => subSum + expense.amount, 0), 0);
 
-        const currentSalaryTotal = currentMonthSalaryDoc.reduce((sum, doc) => sum + doc.netPay, 0) + 
-            currentMonthAdvance.reduce((sum, staff) => {
-                return sum + staff.transactions
-                    .filter(txn => txn.type === 'Advance Payment' && txn.date >= startOfCurrentMonth && txn.date < now)
-                    .reduce((subSum, txn) => subSum + txn.amount, 0);
-            }, 0);
+        const currentSalaryTotal = currentMonthSalaryDoc.reduce((sum, salary) => sum + salary.amount, 0);
 
-        const currentTotalRevenue = currentTableOrderTotal + currentOnlineOrderTotal;
-        const currentTotalExpenses = currentExpenses + currentSalaryTotal;
+        const currentAdvanceTotal = currentMonthAdvance.reduce((sum, staff) => 
+            sum + staff.transactions
+                .filter(txn => txn.type === 'Advance Payment' && txn.date >= startOfCurrentMonth && txn.date < now)
+                .reduce((subSum, txn) => subSum + txn.amount, 0), 0);
+
+        const currentTotalRevenue = currentTableOrderTotal + currentOnlineOrderTotal - (currentExpenses + currentSalaryTotal + currentAdvanceTotal);
+        const currentTotalExpenses = currentExpenses + currentSalaryTotal + currentAdvanceTotal;
 
         // Calculate last month totals
         const lastTableOrderTotal = lastMonthTableOrders.reduce((sum, order) => sum + order.totalAmount, 0);
         const lastOnlineOrderTotal = lastMonthOnlineOrders.reduce((sum, order) => sum + order.totalAmount, 0);
 
-        const lastExpenses = lastMonthExpenseDoc.reduce((sum, doc) => sum + doc.expenses.reduce((subSum, expense) => subSum + expense.amount, 0), 0);
+        const lastExpenses = lastMonthExpenseDoc.reduce((sum, doc) => 
+            sum + doc.expenses.reduce((subSum, expense) => subSum + expense.amount, 0), 0);
 
-        const lastSalaryTotal = lastMonthSalaryDoc.reduce((sum, doc) => sum + doc.netPay, 0) + 
-            lastMonthAdvance.reduce((sum, staff) => {
-                return sum + staff.transactions
-                    .filter(txn => txn.type === 'Advance Payment' && txn.date >= startOfLastMonth && txn.date < endOfLastMonth)
-                    .reduce((subSum, txn) => subSum + txn.amount, 0);
-            }, 0);
+        const lastSalaryTotal = lastMonthSalaryDoc.reduce((sum, salary) => sum + salary.amount, 0);
 
-        const lastTotalRevenue = lastTableOrderTotal + lastOnlineOrderTotal;
-        const lastTotalExpenses = lastExpenses + lastSalaryTotal;
+        const lastAdvanceTotal = lastMonthAdvance.reduce((sum, staff) => 
+            sum + staff.transactions
+                .filter(txn => txn.type === 'Advance Payment' && txn.date >= startOfLastMonth && txn.date < endOfLastMonth)
+                .reduce((subSum, txn) => subSum + txn.amount, 0), 0);
+
+        const lastTotalRevenue = lastTableOrderTotal + lastOnlineOrderTotal - (lastExpenses + lastSalaryTotal + lastAdvanceTotal);
+        const lastTotalExpenses = lastExpenses + lastSalaryTotal + lastAdvanceTotal;
 
         // Calculate percentage changes
         const revenuePercentageChange = lastTotalRevenue
@@ -134,26 +137,29 @@ router.get('/totalof-month', async (req, res) => {
             ? ((currentOnlineOrderTotal - lastOnlineOrderTotal) / lastOnlineOrderTotal) * 100
             : 0;
 
+        const responseData = {
+            totalRevenue: currentTotalRevenue,
+            totalExpenses: currentTotalExpenses,
+            currentTableOrderTotal,
+            currentOnlineOrderTotal,
+            revenuePercentageChange,
+            expensePercentageChange,
+            tableOrderPercentageChange,
+            onlineOrderPercentageChange,
+            currentSalaryTotal, // Include salary expenses in the response
+            currentAdvanceTotal, // Include advance payments in the response
+            lastSalaryTotal, // Include last month's salary expenses in the response
+            lastAdvanceTotal // Include last month's advance payments in the response
+        };
 
-            const responseData = {
-                totalRevenue: currentTotalRevenue,
-                totalExpenses: currentTotalExpenses,
-                currentTableOrderTotal,
-                currentOnlineOrderTotal,
-                revenuePercentageChange,
-                expensePercentageChange,
-                tableOrderPercentageChange,
-                onlineOrderPercentageChange
-            };
-    
-            // Cache the data
-            cache.set("totalOfMonthData", responseData);
+        // Cache the data
+        cache.set("totalOfMonthData", responseData);
         res.status(200).json({
             success: true,
             data: responseData
         });
     } catch (error) {
-        console.log(error)
+        console.log(error);
         res.status(500).json({
             success: false,
             message: 'Server Error',
@@ -165,7 +171,6 @@ router.get('/totalof-month', async (req, res) => {
 
 router.get('/revenue-expenses/last-6-months', async (req, res) => {
     try {
-
         const cachedData = cache.get("revenue-expenses");
         if (cachedData) {
             // Return cached data if it exists
@@ -174,6 +179,7 @@ router.get('/revenue-expenses/last-6-months', async (req, res) => {
                 data: cachedData
             });
         }
+
         const now = new Date();
         const last6MonthsData = [];
 
@@ -182,7 +188,6 @@ router.get('/revenue-expenses/last-6-months', async (req, res) => {
             const startOfMonth = new Date(now.getFullYear(), now.getMonth() - i, 1);
             const endOfMonth = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
             const monthName = startOfMonth.toLocaleString("default", { month: "long" });
-
 
             // Get completed orders for the month
             const tableOrders = await tableOrderModel.find({
@@ -199,12 +204,13 @@ router.get('/revenue-expenses/last-6-months', async (req, res) => {
                 date: { $gte: startOfMonth, $lt: endOfMonth }
             });
 
-            // Get paid salaries and advance payments for the month
+            // Get paid salaries for the month
             const salaryDocs = await salaryModel.find({
-                date: { $gte: startOfMonth, $lt: endOfMonth },
+                paymentDate: { $gte: startOfMonth, $lt: endOfMonth },
                 status: 'Paid'
             });
 
+            // Get advance payments for the month
             const staffAdvancePayments = await staffModel.find({
                 status: 'Active',
                 transactions: {
@@ -224,12 +230,16 @@ router.get('/revenue-expenses/last-6-months', async (req, res) => {
             const monthExpenses = expenseDocs.reduce((sum, doc) => 
                 sum + doc.expenses.reduce((subSum, expense) => subSum + expense.amount, 0), 0);
 
-            const monthSalaryTotal = salaryDocs.reduce((sum, salary) => sum + salary.netPay, 0);
+            // Calculate total salary payments for the month
+            const monthSalaryTotal = salaryDocs.reduce((sum, salary) => sum + salary.amount, 0);
+
+            // Calculate total advance payments for the month
             const advancePaymentsTotal = staffAdvancePayments.reduce((sum, staff) => 
                 sum + staff.transactions
                     .filter(txn => txn.type === 'Advance Payment' && txn.date >= startOfMonth && txn.date < endOfMonth)
                     .reduce((subSum, txn) => subSum + txn.amount, 0), 0);
-            
+
+            // Calculate total monthly expenses (including salaries and advance payments)
             const totalMonthlyExpenses = monthExpenses + monthSalaryTotal + advancePaymentsTotal;
 
             // Store results for the month
@@ -239,11 +249,10 @@ router.get('/revenue-expenses/last-6-months', async (req, res) => {
                 expense: totalMonthlyExpenses,
                 StoreOrders: tableOrderTotal,
                 OnlineOrders: onlineOrderTotal,
+                Salaries: monthSalaryTotal, // Include salary expenses in the response
+                AdvancePayments: advancePaymentsTotal // Include advance payments in the response
             });
         }
-
-
-    
 
         // Cache the data
         cache.set("revenue-expenses", last6MonthsData);

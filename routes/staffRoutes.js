@@ -323,50 +323,42 @@ try {
 }
  
 });
-router.post('/request-advance-pay/:id', async (req, res) => {
+router.post('/salary-pay/:id', async (req, res) => {
     const staffId = req.params.id;
-    const { amount } = req.body;
+    const { amount, paymentDate } = req.body;
 
-    // Ensure amount is valid
+    // Validate staffId
+    if (!mongoose.Types.ObjectId.isValid(staffId)) {
+        return res.status(400).json({ success: false, message: 'Invalid staff ID' });
+    }
+
+    // Validate required fields
     if (!amount || amount <= 0) {
-        return res.status(400).json({
-            success: false,
-            message: 'Please provide a valid amount greater than 0',
-        });
+        return res.status(400).json({ success: false, message: 'Amount must be greater than zero' });
+    }
+
+    if (!paymentDate) {
+        return res.status(400).json({ success: false, message: 'Payment date is required' });
     }
 
     try {
-        // Find the staff member by ID
-        const staff = await staffModel.findById(staffId);
-        if (!staff) {
-            return res.status(404).json({
-                success: false,
-                message: 'Staff member not found',
-            });
-        }
-
-        // Update the advancePayment and add a transaction record
-        staff.advancePayment += amount;
-        staff.transactions.push({
-            type: 'Advance Payment',
+        // Create a new salary record
+        const salary = new salaryModel({
+            staffId,
             amount,
-            description: 'Advance payment requested',
+            netPay:amount,
+            paymentDate: new Date(paymentDate), // Ensure paymentDate is a Date object
+            status: 'Paid', // Default status
         });
 
-        // Save the updated staff document
-        await staff.save();
+        // Save the salary record to the database
+        await salary.save();
 
-        res.status(200).json({
-            success: true,
-            message: 'Advance payment successful',
-            updatedStaff: staff,
-        });
+        // Return success response
+        res.status(201).json({ success: true, message: 'Salary payment recorded successfully', data: salary });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Error processing advance payment',
-            error: error.message,
-        });
+        console.error('Error creating salary record:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 
