@@ -17,6 +17,7 @@ import staffRoutes from './routes/staffRoutes.js'
 import expenseRoute from './routes/expenseRoute.js'
 import dashboardRoute from './routes/dashboardRoute.js'
 import reportRoute from './routes/reportRoute.js'
+import printRoute from './routes/reportRoute.js'
 
 
 const app = express();
@@ -59,3 +60,4 @@ app.use('/api/staff',staffRoutes)
 app.use('/api/expense',expenseRoute)
 app.use('/api/dashboard',dashboardRoute)
 app.use('/api/report',reportRoute)
+app.use('/api/print',printRoute)
