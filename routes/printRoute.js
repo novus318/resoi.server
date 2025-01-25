@@ -1,26 +1,18 @@
 import express from 'express'
-import tableOrderModel from '../models/tableOrderModel';
+import tableOrderModel from '../models/tableOrderModel.js';
+import onlineOrderModel from '../models/onlineOrderModel.js';
 
 
 const router=express.Router()
-dotenv.config({ path: './.env' })
 
-const { JWT_SECRET } = process.env;
 
 const formatOrderForPrinting = (order) => {
     const printData = [
       {
         type: 0, // Text
-        content: `Order ID: ${order._id}`,
+        content: `Order ID: ${order.orderId}`,
         bold: 1, // Bold
         align: 1, // Center
-        format: 0, // Normal
-      },
-      {
-        type: 0, // Text
-        content: `Order Type: ${order.orderType || "N/A"}`,
-        bold: 0, // Not bold
-        align: 0, // Left
         format: 0, // Normal
       },
       {
@@ -32,7 +24,28 @@ const formatOrderForPrinting = (order) => {
       },
       {
         type: 0, // Text
-        content: `Table: ${order.table?.name || "N/A"}`,
+        content: `Address: ${order.address || "N/A"}`,
+        bold: 0, // Not bold
+        align: 0, // Left
+        format: 0, // Normal
+      },
+      {
+        type: 0, // Text
+        content: `Payment Method: ${order.paymentMethod || "N/A"}`,
+        bold: 0, // Not bold
+        align: 0, // Left
+        format: 0, // Normal
+      },
+      {
+        type: 0, // Text
+        content: `Payment Status: ${order.paymentStatus || "N/A"}`,
+        bold: 0, // Not bold
+        align: 0, // Left
+        format: 0, // Normal
+      },
+      {
+        type: 0, // Text
+        content: `Order Status: ${order.status || "N/A"}`,
         bold: 0, // Not bold
         align: 0, // Left
         format: 0, // Normal
@@ -51,7 +64,7 @@ const formatOrderForPrinting = (order) => {
         align: 1, // Center
         format: 0, // Normal
       },
-      ...order.items.map((item) => ({
+      ...order.cartItems.map((item) => ({
         type: 0, // Text
         content: `${item.name} (${item.variant}) - ${item.quantity} x ₹${item.price}`,
         bold: 0, // Not bold
@@ -84,12 +97,12 @@ const formatOrderForPrinting = (order) => {
     return printData;
   };
 
-router.get("/get-order/:id", async (req, res) => {
+  router.get("/get-order/:id", async (req, res) => {
     try {
       const orderId = req.params.id;
   
       // Try to find the order in onlineOrderModel
-      let order = await onlineOrderModel.findById(orderId).populate("user table");
+      let order = await onlineOrderModel.findById(orderId).populate("user");
   
       // If not found in onlineOrderModel, try tableOrderModel
       if (!order) {

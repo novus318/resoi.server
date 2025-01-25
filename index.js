@@ -17,7 +17,7 @@ import staffRoutes from './routes/staffRoutes.js'
 import expenseRoute from './routes/expenseRoute.js'
 import dashboardRoute from './routes/dashboardRoute.js'
 import reportRoute from './routes/reportRoute.js'
-import printRoute from './routes/reportRoute.js'
+import printRoute from './routes/printRoute.js'
 
 
 const app = express();
