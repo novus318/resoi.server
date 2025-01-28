@@ -550,11 +550,15 @@ router.get('/get-store/ordersToday', async (req, res) => {
 
         // Query to get orders from today
         const orders = await tableOrderModel.find({
-            createdAt: {
+            updatedAt: {
                 $gte: startOfToday,
                 $lt: endOfToday
             }
-        }).populate('user table');
+        }).populate({
+            path: 'user',
+            model: 'User', // Safely access userType
+          })
+          .populate('table');
 
         res.status(200).json({
             success: true,
