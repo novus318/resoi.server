@@ -110,7 +110,7 @@ const formatOrderForPrinting = (order) => {
     // List of Items (Left Aligned)
     ...order.cartItems.map((item) => ({
       type: 0, // Text
-      content: `${item.name} (${item.variant}) -       ${item.quantity} x ₹${item.price}`,
+      content: `${item.name} - ${item.quantity} x ₹${item.price}`,
       bold: 0, // Not bold
       align: 0, // Left
       format: 0, // Normal
