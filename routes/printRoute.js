@@ -4,7 +4,6 @@ import onlineOrderModel from '../models/onlineOrderModel.js';
 
 
 const router=express.Router()
-const date = new Date();
 const formatOrderForPrinting = (order) => {
   const printDataArray = [
     // Restaurant Name (Centered, Bold, Larger Font)
@@ -62,7 +61,7 @@ const formatOrderForPrinting = (order) => {
     // Date (Left Aligned)
     {
       type: 0, // Text
-      content: `Date: ${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`,
+      content: `Date: ${String(order?.createdAt.getDate()).padStart(2, '0')}/${String(order?.createdAt.getMonth() + 1).padStart(2, '0')}/${order?.createdAt.getFullYear()}`,
       bold: 0, // Not bold
       align: 0, // Left
       format: 0, // Normal
